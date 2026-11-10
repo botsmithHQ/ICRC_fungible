@@ -121,6 +121,12 @@ shared ({ caller = ledger_canister_id }) persistent actor class Archive (_args :
       icrc85Collector = _args.icrc85Collector;
     };
     var icrc85_kill_switch : ?Bool = _args.icrc85KillSwitch;
+    // LOCAL PATCH (archive kill switch, true wins): the initialiser above runs
+    // only once, so an archive created with the switch `null` or `?false` kept
+    // sharing after an upgrade that passed `?true`. This statement runs on
+    // every install and upgrade: a `?true` in the arguments turns the switch
+    // on, and nothing turns it off again.
+    if (_args.icrc85KillSwitch == ?true) icrc85_kill_switch := ?true;
     // LOCAL PATCH (upgrade keeps bounds): read the arguments the archive was
     // created with, which `initial_args` keeps across upgrades. Upstream binds
     // `args` to `_args`, and `upgradeArchive` upgrades with placeholders

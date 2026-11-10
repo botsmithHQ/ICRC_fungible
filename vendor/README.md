@@ -148,10 +148,33 @@ archive sharing, through two streams (`org.icdevs.icrc85.supertimer` and
   it, from the upgrade's arguments. `upgradeArchive` passes placeholders, so
   `upgradeArchiveWith(canisters, { icrc85KillSwitch })` is added and the ledger
   passes its switch. `upgradeArchive(canisters)` keeps its signature and passes
-  `null`. Once an archive has the variable, later upgrades keep its value.
+  `null`. Once an archive has the variable, later upgrades keep its value,
+  except that a `?true` turns it on (next patch).
 
 **Tests**: `pic/icrc85_off.test.ts` ("new archives send nothing",
 "an archive created by the baseline pays until upgradeArchive, then stops").
+
+### Patch: the archive's kill switch only turns on ("true wins")
+
+**Where**: `src/archive/lib.mo`, right after `icrc85_kill_switch`.
+
+The previous patch keeps `icrc85_kill_switch` in a stable variable whose
+initialiser runs once, when the variable first appears. An archive created with
+the switch `null` or `?false` kept sharing after
+`upgradeArchiveWith(canisters, { icrc85KillSwitch = ?true })`, so a ledger that
+switched ICRC-85 off could not stop the archives it had created before.
+
+A statement after the declaration runs on every install and upgrade: when the
+arguments carry `?true`, the variable becomes `?true`. Nothing sets it back, so
+an upgrade with `null` or `?false` leaves an archive that is off, off. The
+stable type does not change (`moc --stable-compatible` passes from the
+previous archive).
+
+**Tests**: `pic/icrc85_off.test.ts` ("an archive created with the switch null
+stops after upgradeArchiveWith(?true): true wins"). The archive comes from
+`pic/TokenWithICRC85.mo`, which leaves the switch unset; the ledger is then
+upgraded to `src/Token.mo`, whose `upgradeArchive` passes `?true`. Red without
+the statement (the archive's `org.icdevs.icrc85.supertimer` keeps paying).
 
 ### Patch: extra controllers for each new archive
 
