@@ -458,6 +458,16 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
       case (#v0_1_0(#data(s))) { s.nextTimer := null };
       case (_) {};
     };
+
+    // ICRC-3 arms its archive timer only while `cleaningTimer` is null, and
+    // only the timer itself sets it back to null. An upgrade between the block
+    // that armed it and its run leaves the field set and the ledger never
+    // archives again; with it null, the next block arms a new timer.
+    switch (icrc3_migration_state) {
+      case (#v0_2_0(#data(s))) { s.cleaningTimer := null };
+      case (#v0_1_0(#data(s))) { s.cleaningTimer := null };
+      case (_) {};
+    };
   };
 
   // ==========================================================================
