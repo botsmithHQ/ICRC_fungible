@@ -7,7 +7,7 @@ icrc1-mo = "./vendor/icrc1-mo"
 # LOCAL FORK of icrc2-mo 0.2.1 — see vendor/README.md. Upstream mints through
 # icrc2_transfer_from (from == minting account) without checking max_supply.
 icrc2-mo = "./vendor/icrc2-mo"
-# LOCAL FORK of icrc3-mo 0.4.3 — see vendor/README.md. The archive's ICRC-85
+# LOCAL FORK of icrc3-mo 0.4.4 — see vendor/README.md. The archive's ICRC-85
 # sharing follows the ledger's kill switch, the ledger can add controllers to a
 # new archive, and an upgraded archive keeps its own bounds.
 icrc3-mo = "./vendor/icrc3-mo"

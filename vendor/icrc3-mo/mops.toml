@@ -1,6 +1,6 @@
 [package]
 name = "icrc3-mo"
-version = "0.4.3"
+version = "0.4.4"
 description = "icrc3 for motoko"
 repository = "https://github.com/icdevsorg/icrc3.mo"
 keywords = [ "ledger", "transactions", "log", "icrc3", "certification" ]
@@ -16,6 +16,8 @@ stable-write-only = "0.2.1"
 leb128 = "1.1.0"
 ovs-fixed = "0.2.2"
 timer-tool = "0.2.1"
+map = "9.0.1"
+vector = "0.4.1"
 
 [dev-dependencies]
 test = "2.1.2"

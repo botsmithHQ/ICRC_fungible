@@ -51,7 +51,7 @@ points it at any build.
 **Upstream**: https://github.com/icdevsorg/icrc1.mo — remove this fork once a
 release contains the fix.
 
-## `icrc3-mo` — fork of 0.4.3
+## `icrc3-mo` — fork of 0.4.4 (was 0.4.3)
 
 Copied unpatched from the registry first (its own commit), so each patch below
 reads as its own diff. No other dependency imports `icrc3-mo`, so there is one
@@ -59,6 +59,45 @@ copy: `mops sources | grep icrc3-mo` must print `vendor/icrc3-mo/src`.
 
 **Upstream**: https://github.com/icdevsorg/icrc3.mo — drop a patch once a
 release contains it, and the fork once none is left.
+
+### 0.4.4 adopted in pre-production (2026-11-10)
+
+**Why**: upstream 0.4.4 fixes canisters holding a 0.3.x ICRC-3 state, which could
+not upgrade to 0.4.x (M0170). It was taken in pre-production, while no ledger
+built on this fork holds state that has to be kept.
+
+**What changes**: only upstream's 0.4.3 → 0.4.4 delta, applied unchanged on top
+of the fork. It touches none of the patched files, so the patches below are byte
+for byte the same:
+
+- `src/migrations/v000_001_000/types.mo` and `lib.mo`: the v0_1_0 state goes
+  back to its 0.3.x shape (`mo:vector` ledger and supported blocks, `mo:map`
+  archives);
+- `src/migrations/v000_002_000/lib.mo`: the v0_1_0 → v0_2_0 migration now
+  really converts (vector → core `List`, mo:map → core `Map`); in 0.4.3 it
+  copied core to core;
+- `mops.toml`: version 0.4.4, plus `map = "9.0.1"` and `vector = "0.4.1"`.
+
+**What it breaks**: Motoko checks upgrade compatibility on the whole stored type
+`#v0_0_0 | #v0_1_0 | #v0_2_0`, not on the variant actually stored. Changing
+`#v0_1_0` again makes a 0.4.4 build incompatible with **every** ledger built
+with 0.4.0–0.4.3, even one already at v0_2_0: the upgrade is refused with
+`RTS error: Memory-incompatible program upgrade` (M0170). A ledger holding a
+0.4.0–0.4.3 state has to be **reinstalled**, not upgraded. Archives are not
+affected: their stable variables do not hold the v0_1_0 type.
+
+**Root `mops.lock`**: mops 2.13.1 checks the lock against a hash of the root
+`mops.toml` only, so it does not see new dependencies of a local-path fork:
+with the old lock, `mops sources` leaves out `map` and `vector` and the build
+fails on `mo:vector`. Rebuild the lock (move it aside, `mops install --lock
+update`), then put the `./vendor/...` paths back (see the caveat at the end).
+A consumer that resolves this fork through its own lock needs the same.
+
+**Baseline wasms of the pic suite**: `pic/build-baseline-wasm.sh` builds the
+ledger at refs that predate this change. It applies the same four-file delta to
+each baseline's `icrc3-mo` (and refuses a ref whose files are not exactly
+0.4.3), so those tests keep upgrading a ledger in place. Drop that block once
+every baseline ref already has 0.4.4.
 
 ### Patch: an upgraded archive keeps its bounds
 
