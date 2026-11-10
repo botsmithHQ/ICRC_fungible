@@ -435,6 +435,31 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
 
   public shared func deposit_cycles() : async () { ignore Cycles.accept<system>(Cycles.available()) };
 
+  system func postupgrade() {
+    // An upgrade clears every IC timer and Motoko numbers new ones from 1
+    // again, but TimerTool keeps the id of its last timer in stable state and
+    // cancels it the next time it schedules. That id may now belong to a new,
+    // unrelated timer (e.g. ICRC-3 archiving), so forget it first.
+    //
+    // This must run before any TimerTool call in this function. If it ran
+    // after a TimerTool `initialize`, it would forget the timer that call just
+    // set, and that timer would still fire as an orphan.
+    // Unlike `src/Token.mo`, there is no explicit re-arm here: the ClassPlus
+    // manager (`org_icdevs_class_plus_manager`, auto-timer on) already
+    // initializes TimerTool again on every upgrade, from a timer that runs
+    // after this function. That re-arm reads the id cleared here.
+    // With that re-arm in place this line is defensive: the manager's timer
+    // is always the first of field initialization (id 1) and TimerTool's
+    // re-arm takes the next one, so the kept id never names a live timer when
+    // the re-arm cancels it. Without the auto-timer this line is required:
+    // the first schedule would then come from a later block and could cancel
+    // the ICRC-3 archive timer (pic/timertool_upgrade.test.ts, on Token.mo).
+    switch (org_icdevs_timer_tool_state) {
+      case (#v0_1_0(#data(s))) { s.nextTimer := null };
+      case (_) {};
+    };
+  };
+
   // ==========================================================================
   // Legacy / Candid Parity
   // ==========================================================================
