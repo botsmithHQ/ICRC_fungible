@@ -1651,10 +1651,34 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
   };
 
   system func postupgrade() {
+    // An upgrade clears every IC timer and Motoko numbers new ones from 1
+    // again, but TimerTool keeps the id of its last timer in stable state and
+    // cancels it the next time it schedules. That id may now belong to a new,
+    // unrelated timer (e.g. ICRC-3 archiving), so forget it first.
+    switch (tt_state) {
+      case (?#v0_1_0(#data(s))) { s.nextTimer := null };
+      case (_) {};
+    };
+
+    // ICRC-3 arms its archive timer only while `cleaningTimer` is null, and
+    // only the timer itself sets it back to null. An upgrade between the block
+    // that armed it and its run leaves the field set and the ledger never
+    // archives again; with it null, the next block arms a new timer.
+    switch (icrc3_migration_state_new) {
+      case (#v0_2_0(#data(s))) { s.cleaningTimer := null };
+      case (#v0_1_0(#data(s))) { s.cleaningTimer := null };
+      case (_) {};
+    };
+
     //re wire up the listener after upgrade
     
     // Re-register index push notification handlers (transient state lost on upgrade)
     register_index_notify_handlers<system>();
+
+    // Arm TimerTool's timer again for the actions queued before the upgrade
+    // (an index notify). Queued ICRC-85 share actions only reschedule
+    // themselves and return while the kill switch is on.
+    getTimerTool().initialize<system>();
 
     //uncomment the following line to register the transfer_listener
       //icrc1().register_token_transferred_listener("my_namespace", transfer_listener);
