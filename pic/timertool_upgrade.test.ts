@@ -18,7 +18,10 @@ import { Principal } from '@icp-sdk/core/principal';
 import { IDL } from '@icp-sdk/core/candid';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { archives, createIdentity, installLedger, smallArchiveArgs, upgradeLedger, wasmPath } from './archive_harness';
+import {
+  advanceDays, archives, countByStream, createIdentity, installCollector, installLedger, smallArchiveArgs,
+  upgradeLedger, wasmPath,
+} from './archive_harness';
 
 const TOKEN_WASM = wasmPath('TOKEN_WASM', 'token');
 const INDEX_WASM = resolve(__dirname, '../../index.mo/.dfx/local/canisters/icrc_index/icrc_index.wasm.gz');
@@ -42,6 +45,13 @@ const ledgerIdl: IDL.InterfaceFactory = ({ IDL }) => IDL.Service({
     memo: IDL.Opt(IDL.Vec(IDL.Nat8)),
     created_at_time: IDL.Opt(IDL.Nat64),
   })], [IDL.Variant({ Ok: IDL.Nat, Err: IDL.Reserved })], []),
+  // Only the two requests these tests send; Candid accepts a smaller variant.
+  admin_update_icrc1: IDL.Func(
+    [IDL.Vec(IDL.Variant({ MaxAccounts: IDL.Nat, SettleToAccounts: IDL.Nat }))],
+    [IDL.Vec(IDL.Bool)],
+    [],
+  ),
+  icrc1_balance_of: IDL.Func([Account], [IDL.Nat], ['query']),
   icrc3_get_archives: IDL.Func(
     [IDL.Record({ from: IDL.Opt(IDL.Principal) })],
     [IDL.Vec(IDL.Record({ canister_id: IDL.Principal, start: IDL.Nat, end: IDL.Nat }))],
@@ -173,6 +183,35 @@ describe('TimerTool queue after an upgrade', () => {
     await settle(30);
     expect(await synced(index)).toBe(before + 6n);
   });
+
+  // The re-arm also wakes the ICRC-85 share actions queued in the same
+  // TimerTool queue. With the kill switches as shipped (?true) they only
+  // reschedule themselves: nothing may reach the collector.
+  it('ICRC-85 stays off: after the re-arm, the queued share actions pay nothing', async () => {
+    const { ledger, ledgerId, index } = await setup();
+    const collector = await installCollector(pic!);
+    const before = await synced(index);
+    await mint(ledger, 1_000_000n);
+    await mint(ledger, 2_000_000n);
+    await mint(ledger, 3_000_000n);
+    await mint(ledger, 4_000_000n);
+    await upgradeLedger(pic!, ledgerId, TOKEN_WASM, owner, null);
+    await settle(30);
+    expect(await synced(index)).toBe(before + 4n); // the queue is awake
+
+    // Several share periods (30 days each), with traffic in each one.
+    for (let period = 0; period < 3; period++) {
+      await advanceDays(pic!, 31);
+      await mint(ledger, 1_000n);
+      await mint(ledger, 1_000n);
+      await settle(10);
+    }
+    // The real index pays its own shares (another canister, ICRC-85 on), so
+    // the collector does receive; none of it may come from the ledger.
+    const streams = Object.keys(await countByStream(collector));
+    expect(streams.length).toBeGreaterThan(0);
+    expect(streams.filter((s) => s.endsWith(`@ ${ledgerId.toText()}`))).toEqual([]);
+  }, 300_000);
 });
 
 describe('TimerTool timer id kept across an upgrade', () => {
@@ -241,5 +280,92 @@ describe('TimerTool timer id kept across an upgrade', () => {
   it('after an upgrade, the first push does not cancel the archive timer', async () => {
     const { before, after } = await archivingAfterFirstPush(true);
     expect(after).toBeGreaterThan(before);
+  }, 300_000);
+});
+
+describe('Other timer ids kept in stable state across an upgrade', () => {
+  // ICRC-3 keeps the id of its archive timer (`cleaningTimer`) in stable state
+  // and only arms a new one while that field is null; the timer clears it when
+  // it fires. If the ledger is stopped and upgraded after the block that armed
+  // the timer but before it fires, the timer is gone and the field is not null.
+  async function archivingAfterStopAtLimit(upgrade: boolean): Promise<{ before: bigint; after: bigint }> {
+    const { ledger, ledgerId } = await setup(smallArchiveArgs(), false);
+    const send = async (n: bigint) => {
+      ledger.setIdentity(holderId);
+      const r = await ledger.icrc1_transfer({
+        from_subaccount: [], to: { owner: RECIPIENT, subaccount: [] },
+        amount: 1_000n + n, fee: [], memo: [], created_at_time: [],
+      });
+      ledger.setPrincipal(owner);
+      expect('Ok' in r).toBe(true);
+    };
+    await mint(ledger, 1_000_000_000_000n);
+    // 50 blocks on the ledger: its limit, not yet crossed.
+    for (let n = 1n; n < 50n; n++) { await send(n); await pic!.tick(); }
+    await settle(3);
+    expect(await archived(ledger, ledgerId)).toBe(0n);
+
+    // Block 51 arms the archive timer; stop the ledger before it fires.
+    await send(50n);
+    await pic!.stopCanister({ canisterId: ledgerId, sender: owner });
+    if (upgrade) await upgradeLedger(pic!, ledgerId, TOKEN_WASM, owner, smallArchiveArgs());
+    await pic!.startCanister({ canisterId: ledgerId, sender: owner });
+    await settle();
+    const before = await archived(ledger, ledgerId);
+    for (let n = 51n; n < 81n; n++) { await send(n); await pic!.tick(); }
+    await settle();
+    return { before, after: await archived(ledger, ledgerId) };
+  }
+
+  it('positive control: icrc3 cleaningTimer, a stop and start alone keeps the ledger archiving', async () => {
+    const { after } = await archivingAfterStopAtLimit(false);
+    expect(after).toBeGreaterThan(0n);
+  }, 300_000);
+
+  it('icrc3 cleaningTimer: an upgrade while the archive timer is armed does not stop archiving', async () => {
+    const { before, after } = await archivingAfterStopAtLimit(true);
+    expect(before).toBe(0n); // the timer had not fired before the upgrade
+    expect(after).toBeGreaterThan(0n);
+  }, 300_000);
+
+  // ICRC-1 keeps `cleaning_timer` (shared with ICRC-2, which calls the same
+  // check) in stable state, arms it on a transfer only while it is null, and
+  // never sets it back to null (vendor/icrc1-mo ICRC1/lib.mo, handleCleanUp and
+  // checkAccounts). So the account sweep (burn the smallest balances once there
+  // are more than max_accounts) runs at most once in the life of the ledger, at
+  // its first transfer, upgrade or not. That is an upstream one-shot timer, not
+  // a stale id left by an upgrade, and it is not fixed here: setting the field
+  // back to null would start burning balances. This test measures it.
+  async function accountsWithBalanceOverTheLimit(upgrade: boolean): Promise<number> {
+    const { ledger, ledgerId } = await setup(null, false);
+    const others = [100, 101, 102, 103].map((s) => createIdentity(s).getPrincipal());
+    const send = async (to: Principal, amount: bigint) => {
+      ledger.setIdentity(holderId);
+      const r = await ledger.icrc1_transfer({
+        from_subaccount: [], to: { owner: to, subaccount: [] },
+        amount, fee: [], memo: [], created_at_time: [],
+      });
+      ledger.setPrincipal(owner);
+      expect('Ok' in r).toBe(true);
+    };
+    await mint(ledger, 1_000_000_000_000n);
+    await send(others[0], 1_000_000n); // the timer runs with two accounts: nothing to sweep
+    await settle(3);
+    expect(await ledger.admin_update_icrc1([{ MaxAccounts: 3n }, { SettleToAccounts: 2n }])).toEqual([true, true]);
+    if (upgrade) await upgradeLedger(pic!, ledgerId, TOKEN_WASM, owner, null);
+    for (let i = 1; i < others.length; i++) { await send(others[i], 1_000_000n + BigInt(i)); await settle(2); }
+    await settle(5);
+    let withBalance = 0;
+    for (const p of [holder, ...others]) {
+      if ((await ledger.icrc1_balance_of({ owner: p, subaccount: [] })) > 0n) withBalance++;
+    }
+    return withBalance;
+  }
+
+  it('measured: icrc1/icrc2 cleaning_timer is one-shot for the life of the ledger, so an upgrade changes nothing', async () => {
+    // Five accounts with a balance and max_accounts = 3: the sweep never runs again.
+    expect(await accountsWithBalanceOverTheLimit(false)).toBe(5);
+    await pic!.tearDown(); pic = undefined;
+    expect(await accountsWithBalanceOverTheLimit(true)).toBe(5);
   }, 300_000);
 });
