@@ -139,10 +139,16 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
   // TimerTool via mixin - shared timer queue for all components
   // ==========================================================================
 
+  // ICRC-85 is OFF in this token: it shares no cycles, through any stream
+  // (TimerTool, ICRC-1, ICRC-3 and its archives). In every library a `null`
+  // switch means ON; only `?true` turns a stream off, as in `src/Token.mo`.
+  // `pic/TokenWithICRC85.mo` shows how to turn sharing on.
   func get_timertool_environment() : TT.Environment {{
     advanced = ?{
       icrc85 = ?{
-        kill_switch = null;
+        // TimerTool schedules its own share unless this switch is `?true`,
+        // and a share queued by an earlier build returns before sending.
+        kill_switch = ?true;
         handler = null;
         period = null;
         asset = null;
@@ -180,7 +186,14 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
     advanced = ?{
       get_archive_controllers = null;
       updated_certification = ?updated_certification;
-      icrc85 = null;
+      // ICRC-85 OFF for the icrc3 stream, and for every archive, which
+      // takes this switch at creation. A `null` environment here does NOT
+      // switch it off: it means "default collector, no kill switch".
+      icrc85 = ?{
+        var org_icdevs_timer_tool = ?org_icdevs_timer_tool;
+        var collector = null;
+        advanced = ?{ kill_switch = ?true; handler = null; tree = null };
+      };
     };
     get_certificate_store = ?get_certificate_store;
     var org_icdevs_timer_tool = ?org_icdevs_timer_tool;
@@ -188,12 +201,15 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
 
   func get_icrc1_environment() : ICRC1.Environment {{
     advanced = ?{
-      icrc85 = { 
-        kill_switch = null; 
-        handler = null; 
-        tree = null; 
-        collector = null; 
-        advanced = null;
+      icrc85 = {
+        // No library reads this top-level field: set alone, the icrc1 stream
+        // keeps sharing. Set for readers; the switch is `advanced` below.
+        kill_switch = ?true;
+        handler = null;
+        tree = null;
+        collector = null;
+        // ICRC-85 OFF for the icrc1 stream.
+        advanced = ?{ kill_switch = ?true; handler = null; tree = null };
       };
       get_fee = null;
       fee_validation_mode = ?#Strict;
