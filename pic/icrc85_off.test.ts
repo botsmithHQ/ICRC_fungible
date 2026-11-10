@@ -94,7 +94,7 @@ describe('ICRC-85 is off', () => {
 
   it('a share queued by the baseline sends nothing after the upgrade', async () => {
     const collector = await installCollector(pic);
-    const { id } = await installLedger(pic, BASELINE_WASM, owner, null);
+    const { id, actor: ledger } = await installLedger(pic, BASELINE_WASM, owner, null);
     await advanceDays(pic, 8);
     const before = await countByNamespace(collector, id);
     for (const ns of LEDGER_STREAMS) {
@@ -103,6 +103,24 @@ describe('ICRC-85 is off', () => {
 
     await upgradeLedger(pic, id, TOKEN_WASM, owner, null);
     const streamsBefore = await countByStream(collector);
+
+    // The upgrade drops the IC timer behind TimerTool. The share the baseline
+    // queued keeps its id, so ICRC-85 never asks TimerTool again (ovs-fixed
+    // `initialize` only schedules when `nextCycleActionId` is null). Plain
+    // traffic does not help, so without a new TimerTool action this test passes
+    // whatever the switch says. The realistic path arms it: an index is
+    // configured and a block is added, so the index push queues a TimerTool
+    // action and the timer is set again for the earliest action, the queued
+    // shares included. No canister lives at the index id; the failed push is
+    // handled.
+    const admin = pic.createActor<any>(({ IDL }) => IDL.Service({
+      admin_set_index_canister: IDL.Func([IDL.Opt(IDL.Principal)], [IDL.Bool], []),
+    }), id);
+    admin.setPrincipal(owner);
+    expect(await admin.admin_set_index_canister([createIdentity(3).getPrincipal()])).toBe(true);
+    let transfers = 0;
+    await transferUntil(pic, ledger, owner, holder, async () => transfers++ >= 1);
+
     for (const days of [31, 31]) {
       await advanceDays(pic, days);
       expectNoGrowth(streamsBefore, await countByStream(collector), `after the upgrade, +${days}d`);

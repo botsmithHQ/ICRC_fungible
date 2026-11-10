@@ -7,11 +7,14 @@
 // you should also avoid importing these types anywhere in your project directly from here
 // use MigrationTypes.Current property instead
 
-import List "mo:core/List";
+import Vec "mo:vector";
 import SW "mo:stable-write-only";
-import Map "mo:core/Map";
+import Map "mo:map/Map";
 import CertTreeLib "mo:ic-certification/CertTree";
 
+// ⚠️ THIS IS THE 0.3.x STATE LAYOUT (mo:vector ledger, mo:map archives) AND MUST NOT CHANGE.
+// 0.4.x rewrote it in place to mo:core containers, which made every canister holding a 0.3.x
+// state un-upgradeable (M0170). The core layout is v000_002_000; its upgrade converts this.
 module {
 
   public let CertTree = CertTreeLib;
@@ -41,9 +44,9 @@ module {
   };
 
   public type State = {
-    var ledger : List.List<Transaction>;
+    var ledger : Vec.Vector<Transaction>;
     archives: Map.Map<Principal, TransactionRange>;
-    supportedBlocks: List.List<BlockType>;
+    supportedBlocks: Vec.Vector<BlockType>;
     ledgerCanister : Principal;
     var lastIndex : Nat;
     var firstIndex : Nat;

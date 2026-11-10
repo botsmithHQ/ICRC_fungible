@@ -3,6 +3,9 @@ import v0_2_0 "types";
 
 import Map "mo:core/Map";
 import List "mo:core/List";
+import Vec "mo:vector";
+import OldMap "mo:map/Map";
+import v0_1_0 "../v000_001_000/types";
 
 import OVSFixed "mo:ovs-fixed";
 
@@ -18,14 +21,11 @@ module {
       return prevMigrationState; // Already at or past this version
     };
 
-    // Migrating from mo:core/List (v0.1.0 updated) to mo:core/List (v0.2.0)
-    let newLedger = List.fromArray<Transaction>(List.toArray<Transaction>(prevState.ledger));
-
-    // Migrating from mo:core/List (v0.1.0 updated) to mo:core/List (v0.2.0)
-    let newSupportedBlocks = List.fromArray<BlockType>(List.toArray<BlockType>(prevState.supportedBlocks));
-
-    // Migrating from mo:core/Map (v0.1.0 updated) to mo:core/Map (v0.2.0)
-    let newArchives = Map.fromIter<Principal, TransactionRange>(Map.entries<Principal, TransactionRange>(prevState.archives), v0_2_0.principal_compare);
+    // 0.3.x layout -> mo:core: mo:vector ledger/supportedBlocks -> core List; mo:map archives -> core Map.
+    // Transaction/BlockType/TransactionRange are the same shapes in both versions.
+    let newLedger = List.fromArray<Transaction>(Vec.toArray<v0_1_0.Transaction>(prevState.ledger));
+    let newSupportedBlocks = List.fromArray<BlockType>(Vec.toArray<v0_1_0.BlockType>(prevState.supportedBlocks));
+    let newArchives = Map.fromIter<Principal, TransactionRange>(OldMap.entries<Principal, v0_1_0.TransactionRange>(prevState.archives), v0_2_0.principal_compare);
 
     let state : v0_2_0.State = {
       var ledger = newLedger;

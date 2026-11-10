@@ -41,12 +41,98 @@ if ! git cat-file -e "$BASELINE_REF^{commit}" 2>/dev/null; then
   echo "baseline $BASELINE_REF is not in this clone's history (shallow clone?): git fetch --unshallow, or pass a ref" >&2
   exit 1
 fi
+# --- icrc3-mo 0.4.3 -> 0.4.4 in the baseline (TEMPORARY, see vendor/README.md) ---
+# icrc3-mo 0.4.4 changed the stored type of its v0_1_0 migration state. A ledger
+# built with 0.4.0-0.4.3 cannot be upgraded in place to a 0.4.4 build: the
+# runtime refuses it ("RTS error: Memory-incompatible program upgrade", M0170).
+# Every baseline ref predates the adoption, so each baseline gets exactly the
+# upstream 0.4.3 -> 0.4.4 delta: the four files below, copied from HEAD's
+# vendor/icrc3-mo (which carries no LOCAL PATCH in them), plus the two packages
+# the delta imports (map, vector). The rest of the baseline's icrc3-mo (archive,
+# ICRC-85 switches, ...) stays as it was at the ref. A ref whose icrc3-mo is not
+# exactly 0.4.3 in these files stops the build.
+# Remove this block once every baseline ref is a commit that already has 0.4.4.
+ICRC3_DELTA_FILES=(
+  "438cba095f02059d47b9e50f80e03c25b0295f4950f93ada621b6c905ed1a194 mops.toml"
+  "0ee190c0c346ef9dc81c85c6878cda3753e25562425a623ac166f36b34b685a8 src/migrations/v000_001_000/lib.mo"
+  "b7f9c9feb180102895f39fdbb47b0c6561728ed73627b6950b120f656d0ca19b src/migrations/v000_001_000/types.mo"
+  "aafada16c2ae3347b410e524988b120fe7b90f460d3690b471e87fbb6f29d091 src/migrations/v000_002_000/lib.mo"
+)
+ICRC3_HEAD="$ROOT/vendor/icrc3-mo"
+# map and vector as HEAD resolves them (HEAD's mops install must have run).
+ICRC3_EXTRA_SOURCES=""
+for pkg in map vector; do
+  src="$(cd "$ROOT" && mops sources | awk -v p="$pkg" '$1 == "--package" && $2 == p { print $3 }')"
+  if [ -z "$src" ] || [ ! -d "$ROOT/$src" ]; then
+    echo "icrc3 delta: HEAD does not resolve '$pkg' (run mops install at the repo root)" >&2
+    exit 1
+  fi
+  # Copied under $TMP: $SOURCES is word-split, and $ROOT may contain spaces.
+  cp -R "$ROOT/$src" "$TMP/pkg-$pkg"
+  ICRC3_EXTRA_SOURCES+="--package $pkg $TMP/pkg-$pkg "
+done
+
+patch_icrc3_to_044() {
+  local dir="$1" entry sum f
+  if [ -L "$dir" ] || [ ! -d "$dir" ]; then
+    echo "icrc3 delta: $dir is not a plain directory in the baseline; refusing to write to it" >&2
+    return 1
+  fi
+  # Refuse anything but exactly 0.4.3 in the files the delta touches.
+  for entry in "${ICRC3_DELTA_FILES[@]}"; do
+    sum="${entry%% *}"; f="${entry#* }"
+    if [ -L "$dir/$f" ] || [ ! -f "$dir/$f" ]; then
+      echo "icrc3 delta: baseline $BASELINE_REF has no plain $f in $dir" >&2
+      return 1
+    fi
+    if [ "$(shasum -a 256 "$dir/$f" | cut -c1-64)" != "$sum" ]; then
+      echo "icrc3 delta: baseline $BASELINE_REF: $dir/$f is not icrc3-mo 0.4.3; not patching" >&2
+      return 1
+    fi
+  done
+  local before="$TMP/icrc3-before"
+  cp -R "$dir" "$before"
+  for entry in "${ICRC3_DELTA_FILES[@]}"; do
+    f="${entry#* }"
+    cp "$ICRC3_HEAD/$f" "$dir/$f"
+  done
+  # (a) the delta files now match HEAD byte for byte;
+  for entry in "${ICRC3_DELTA_FILES[@]}"; do
+    f="${entry#* }"
+    cmp -s "$ICRC3_HEAD/$f" "$dir/$f" || { echo "icrc3 delta: $f differs from HEAD after patching" >&2; return 1; }
+  done
+  # (b) nothing else in the baseline's icrc3-mo changed...
+  local changed expected
+  changed="$( { diff -rq "$before" "$dir" || true; } | sed "s#^Files $before/\([^ ]*\) and .*#\1#" | sort)"
+  expected="$(for entry in "${ICRC3_DELTA_FILES[@]}"; do echo "${entry#* }"; done | sort)"
+  if [ "$changed" != "$expected" ]; then
+    echo "icrc3 delta: unexpected changes in $dir:" >&2
+    diff -rq "$before" "$dir" >&2 || true
+    return 1
+  fi
+  # ...and nothing tracked outside it.
+  local outside
+  outside="$(git status --porcelain --untracked-files=all | grep -v -F " ${dir#./}/" || true)"
+  if [ -n "$outside" ]; then
+    echo "icrc3 delta: files outside $dir changed:" >&2
+    echo "$outside" >&2
+    return 1
+  fi
+  echo "icrc3 delta: $dir patched 0.4.3 -> 0.4.4 (4 files, now identical to HEAD's vendor/icrc3-mo)"
+}
+
 git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
 (
   cd "$TMP/src"
   mops install >/dev/null
   MOC="$(mops toolchain bin moc)"
-  SOURCES="$(mops sources | tr '\n' ' ')"
+  ICRC3_SRC="$(mops sources | awk '$1 == "--package" && $2 == "icrc3-mo" { print $3 }')"
+  if [ -z "$ICRC3_SRC" ]; then
+    echo "icrc3 delta: baseline $BASELINE_REF does not resolve icrc3-mo" >&2
+    exit 1
+  fi
+  patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
+  SOURCES="$(mops sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
   # shellcheck disable=SC2086
   "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null

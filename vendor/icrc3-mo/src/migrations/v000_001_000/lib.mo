@@ -1,8 +1,8 @@
 import MigrationTypes "../types";
 import v0_1_0 "types";
 
-import List "mo:core/List";
-import Map "mo:core/Map";
+import Vec "mo:vector";
+import Map "mo:map/Map";
 
 module {
 
@@ -15,12 +15,12 @@ module {
     let state : v0_1_0.State = {
       var lastIndex = 0;
       var firstIndex = 0;
-      var ledger : List.List<Transaction> = List.empty<Transaction>();
+      var ledger : Vec.Vector<Transaction> = Vec.new<Transaction>();
       var bCleaning = false;
       var cleaningTimer = null;
       var latest_hash = null;
-      supportedBlocks =  List.empty<v0_1_0.BlockType>();
-      archives = Map.empty<Principal, v0_1_0.TransactionRange>();
+      supportedBlocks =  Vec.new<v0_1_0.BlockType>();
+      archives = Map.new<Principal, v0_1_0.TransactionRange>();
       ledgerCanister = caller;
       constants = {
         archiveProperties = switch(args){
