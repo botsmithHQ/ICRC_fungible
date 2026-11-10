@@ -139,10 +139,16 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
   // TimerTool via mixin - shared timer queue for all components
   // ==========================================================================
 
+  // ICRC-85 is OFF in this token: it shares no cycles, through any stream
+  // (TimerTool, ICRC-1, ICRC-3 and its archives). In every library a `null`
+  // switch means ON; only `?true` turns a stream off, as in `src/Token.mo`.
+  // `pic/TokenWithICRC85.mo` shows how to turn sharing on.
   func get_timertool_environment() : TT.Environment {{
     advanced = ?{
       icrc85 = ?{
-        kill_switch = null;
+        // TimerTool schedules its own share unless this switch is `?true`,
+        // and a share queued by an earlier build returns before sending.
+        kill_switch = ?true;
         handler = null;
         period = null;
         asset = null;
@@ -180,7 +186,14 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
     advanced = ?{
       get_archive_controllers = null;
       updated_certification = ?updated_certification;
-      icrc85 = null;
+      // ICRC-85 OFF for the icrc3 stream, and for every archive, which
+      // takes this switch at creation. A `null` environment here does NOT
+      // switch it off: it means "default collector, no kill switch".
+      icrc85 = ?{
+        var org_icdevs_timer_tool = ?org_icdevs_timer_tool;
+        var collector = null;
+        advanced = ?{ kill_switch = ?true; handler = null; tree = null };
+      };
     };
     get_certificate_store = ?get_certificate_store;
     var org_icdevs_timer_tool = ?org_icdevs_timer_tool;
@@ -188,12 +201,15 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
 
   func get_icrc1_environment() : ICRC1.Environment {{
     advanced = ?{
-      icrc85 = { 
-        kill_switch = null; 
-        handler = null; 
-        tree = null; 
-        collector = null; 
-        advanced = null;
+      icrc85 = {
+        // No library reads this top-level field: set alone, the icrc1 stream
+        // keeps sharing. Set for readers; the switch is `advanced` below.
+        kill_switch = ?true;
+        handler = null;
+        tree = null;
+        collector = null;
+        // ICRC-85 OFF for the icrc1 stream.
+        advanced = ?{ kill_switch = ?true; handler = null; tree = null };
       };
       get_fee = null;
       fee_validation_mode = ?#Strict;
@@ -418,6 +434,41 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
   });
 
   public shared func deposit_cycles() : async () { ignore Cycles.accept<system>(Cycles.available()) };
+
+  system func postupgrade() {
+    // An upgrade clears every IC timer and Motoko numbers new ones from 1
+    // again, but TimerTool keeps the id of its last timer in stable state and
+    // cancels it the next time it schedules. That id may now belong to a new,
+    // unrelated timer (e.g. ICRC-3 archiving), so forget it first.
+    //
+    // This must run before any TimerTool call in this function. If it ran
+    // after a TimerTool `initialize`, it would forget the timer that call just
+    // set, and that timer would still fire as an orphan.
+    // Unlike `src/Token.mo`, there is no explicit re-arm here: the ClassPlus
+    // manager (`org_icdevs_class_plus_manager`, auto-timer on) already
+    // initializes TimerTool again on every upgrade, from a timer that runs
+    // after this function. That re-arm reads the id cleared here.
+    // With that re-arm in place this line is defensive: the manager's timer
+    // is always the first of field initialization (id 1) and TimerTool's
+    // re-arm takes the next one, so the kept id never names a live timer when
+    // the re-arm cancels it. Without the auto-timer this line is required:
+    // the first schedule would then come from a later block and could cancel
+    // the ICRC-3 archive timer (pic/timertool_upgrade.test.ts, on Token.mo).
+    switch (org_icdevs_timer_tool_state) {
+      case (#v0_1_0(#data(s))) { s.nextTimer := null };
+      case (_) {};
+    };
+
+    // ICRC-3 arms its archive timer only while `cleaningTimer` is null, and
+    // only the timer itself sets it back to null. An upgrade between the block
+    // that armed it and its run leaves the field set and the ledger never
+    // archives again; with it null, the next block arms a new timer.
+    switch (icrc3_migration_state) {
+      case (#v0_2_0(#data(s))) { s.cleaningTimer := null };
+      case (#v0_1_0(#data(s))) { s.cleaningTimer := null };
+      case (_) {};
+    };
+  };
 
   // ==========================================================================
   // Legacy / Candid Parity
