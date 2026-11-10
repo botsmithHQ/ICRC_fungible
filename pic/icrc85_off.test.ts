@@ -27,13 +27,17 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { PocketIc, PocketIcServer, SubnetStateType } from '@dfinity/pic';
 import { Principal } from '@icp-sdk/core/principal';
+import { IDL } from '@icp-sdk/core/candid';
+import { readFileSync } from 'fs';
 import {
   NAMESPACES, advanceDays, countByStream, trace, archiveBlocks, archiveIdl, archives, countByNamespace, createIdentity,
-  expectAllUpgraded, installCollector, installLedger, smallArchiveArgs, transferUntil, upgradeLedger, wasmPath,
+  expectAllUpgraded, installCollector, installLedger, ledgerIdl, smallArchiveArgs, tokenInitType, transferUntil,
+  upgradeLedger, wasmPath,
 } from './archive_harness';
 
 const TOKEN_WASM = wasmPath('TOKEN_WASM', 'token');
 const BASELINE_WASM = wasmPath('BASELINE_TOKEN_WASM', 'token_baseline');
+const ICRC85_WASM = wasmPath('ICRC85_WASM', 'token_icrc85');
 
 const LEDGER_STREAMS = [NAMESPACES.icrc1, NAMESPACES.icrc3, NAMESPACES.timerTool];
 const ARCHIVE_STREAMS = [NAMESPACES.timerTool, NAMESPACES.archive];
@@ -104,15 +108,13 @@ describe('ICRC-85 is off', () => {
     await upgradeLedger(pic, id, TOKEN_WASM, owner, null);
     const streamsBefore = await countByStream(collector);
 
-    // The upgrade drops the IC timer behind TimerTool. The share the baseline
-    // queued keeps its id, so ICRC-85 never asks TimerTool again (ovs-fixed
-    // `initialize` only schedules when `nextCycleActionId` is null). Plain
-    // traffic does not help, so without a new TimerTool action this test passes
-    // whatever the switch says. The realistic path arms it: an index is
-    // configured and a block is added, so the index push queues a TimerTool
-    // action and the timer is set again for the earliest action, the queued
-    // shares included. No canister lives at the index id; the failed push is
-    // handled.
+    // The upgrade drops the IC timer behind TimerTool, and `Token.mo`'s
+    // postupgrade arms it again for the earliest queued action, the share the
+    // baseline queued included. This test still goes through the realistic
+    // path of a live ledger: an index is configured and a block is added, so
+    // the index push queues a TimerTool action too. That traffic is no longer
+    // what wakes the queue. No canister lives at the index id; the failed push
+    // is handled.
     const admin = pic.createActor<any>(({ IDL }) => IDL.Service({
       admin_set_index_canister: IDL.Func([IDL.Opt(IDL.Principal)], [IDL.Bool], []),
     }), id);
@@ -121,9 +123,25 @@ describe('ICRC-85 is off', () => {
     let transfers = 0;
     await transferUntil(pic, ledger, owner, holder, async () => transfers++ >= 1);
 
+    // Witness, in this run, that the timer was armed again and the queued share
+    // ran. ovs-fixed reschedules the share (a new `nextCycleActionId`) before it
+    // returns on the kill switch, so the id changes whether the share pays or
+    // not. Without it, a ledger whose timer never fires again after the upgrade
+    // would leave this test green.
+    const stats = pic.createActor<any>(({ IDL }) => IDL.Service({
+      get_icrc85_stats: IDL.Func([], [IDL.Record({
+        activeActions: IDL.Nat, lastActionReported: IDL.Opt(IDL.Nat), nextCycleActionId: IDL.Opt(IDL.Nat),
+      })], ['query']),
+    }), id);
+    const queued = (await stats.get_icrc85_stats()).nextCycleActionId;
+    expect(queued, 'the baseline queued an icrc1 share').toHaveLength(1);
+
     for (const days of [31, 31]) {
       await advanceDays(pic, days);
       expectNoGrowth(streamsBefore, await countByStream(collector), `after the upgrade, +${days}d`);
+      const next = (await stats.get_icrc85_stats()).nextCycleActionId;
+      expect(next, `after the upgrade, +${days}d: the queued share was rescheduled`).toHaveLength(1);
+      expect(next[0], `after the upgrade, +${days}d: the queued share ran`).not.toBe(queued[0]);
     }
   });
 
@@ -181,6 +199,59 @@ describe('ICRC-85 is off', () => {
       const stats = await archive.get_stats();
       expect(await archiveBlocks(archive, stats.first_block_index, stats.total_records), `blocks of ${a.canister_id.toText()}`)
         .toBe(blocksBefore[i]);
+    }
+  });
+
+  it('an archive created with the switch null stops after upgradeArchiveWith(?true): true wins', async () => {
+    // The archive already has its `icrc85_kill_switch` variable, set to null
+    // because its ledger (pic/TokenWithICRC85.mo) leaves the switch unset. Its
+    // initialiser does not run again on upgrade; only the "true wins" statement
+    // can turn the switch on.
+    const collector = await installCollector(pic);
+    const [tokenArgs] = smallArchiveArgs({ perArchive: 60 }) as any[];
+    const fixtureInit = IDL.Opt(IDL.Record({
+      icrc1: IDL.Opt(IDL.Null),
+      icrc2: IDL.Opt(IDL.Null),
+      icrc3: (tokenInitType() as any)._type._fields.find(([k]: [string]) => k === 'icrc3')[1]._type,
+      icrc4: IDL.Opt(IDL.Null),
+      icrc85_collector: IDL.Opt(IDL.Principal),
+    }));
+    const id = await pic.createCanister({ sender: owner, cycles: 500_000_000_000_000n });
+    await pic.installCode({
+      canisterId: id,
+      wasm: readFileSync(ICRC85_WASM),
+      arg: new Uint8Array(IDL.encode([fixtureInit], [[{ ...tokenArgs, icrc3: tokenArgs.icrc3[0], icrc85_collector: [] }]])),
+      sender: owner,
+    });
+    for (let i = 0; i < 5; i++) await pic.tick();
+    const ledger = pic.createActor<any>(ledgerIdl, id);
+    await transferUntil(pic, ledger, owner, holder, async () => (await archives(ledger, id)).length >= 1);
+    const list = await archives(ledger, id);
+
+    // Positive control: the archive pays on both of its streams.
+    await advanceDays(pic, 8);
+    for (const a of list) {
+      const counts = await countByNamespace(collector, a.canister_id);
+      for (const ns of ARCHIVE_STREAMS) {
+        expect(counts[ns] ?? 0, `null-switch archive ${a.canister_id.toText()} stream ${ns} should pay`).toBeGreaterThanOrEqual(1);
+      }
+    }
+
+    // `Token.mo` upgrades its archives with `upgradeArchiveWith(…, ?true)`.
+    await upgradeLedger(pic, id, TOKEN_WASM, owner, smallArchiveArgs({ perArchive: 60 }));
+    ledger.setPrincipal(owner);
+    expectAllUpgraded(await ledger.upgradeArchive(false), list);
+    for (let i = 0; i < 5; i++) await pic.tick();
+    expect(await ledger.getUpgradeError()).toBe('');
+
+    const before: Record<string, Record<string, number>> = {};
+    for (const a of list) before[a.canister_id.toText()] = await countByNamespace(collector, a.canister_id);
+    for (const days of [31, 31]) {
+      await advanceDays(pic, days);
+      for (const a of list) {
+        expectNoGrowth(before[a.canister_id.toText()], await countByNamespace(collector, a.canister_id),
+          `archive ${a.canister_id.toText()} after upgradeArchiveWith(?true), +${days}d`);
+      }
     }
   });
 });
