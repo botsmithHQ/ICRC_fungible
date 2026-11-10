@@ -661,6 +661,14 @@ module {
       //clear the timer
       state.cleaningTimer := null;
 
+      // LOCAL PATCH (cleaningTimer committed before archiving): a trap before
+      // the first await below (sending the archive's cycles when the ledger
+      // is close to its freezing threshold) rolled back the line above, so
+      // `add_record` never armed the timer again. This await commits the
+      // null on its own; the guard and `bCleaning := true` stay after it, in
+      // one message.
+      await async {};
+
       debug if(debug_channel.clean_up) Debug.print("Checking clean up" # debug_show(stats()));
 
       //ensure only one cleaning job is running

@@ -226,6 +226,53 @@ without sending it.
 **Tests**: `pic/icrc85_off.test.ts` ("a new archive is controlled by the owner
 read after it exists"); the limit, `pic/archive_upgrade_results.test.ts`.
 
+### Patch: the archive timer is released before archiving
+
+**Where**: `src/lib.mo`, `check_clean_up`, right after `state.cleaningTimer := null`
+(`LOCAL PATCH (cleaningTimer committed before archiving)`).
+
+**Bug**: `add_record` arms the archive timer only while `cleaningTimer` is
+null, and only `check_clean_up`, run by that timer, sets it back to null. Its
+first `await` is the archive creation, which sends `archiveCycles` to the new
+canister. When the ledger's balance passes the `balance > 2 × archiveCycles`
+check but its freezing reserve leaves less than `archiveCycles` to send, the
+send traps inside the timer's message, before any `await`. The trap rolls back
+the `null`: the field keeps the id of a timer that already ran, no block arms
+another one, and the ledger never archives again, even once it is topped up.
+Only an upgrade recovered it (`Token.mo`'s postupgrade clears the field).
+
+**Fix**: `await async {}` right after the `null`. The `null` commits in its own
+message; a later trap rolls back only what follows, so the next block arms a
+new timer. The `bCleaning` guard and `bCleaning := true` stay after the
+`await`, in one message: before it, a cleanup armed by a block that lands
+during the `await` could pass the guard too, and two cleanups would archive the
+same blocks. The alternative, checking the funds before sending, needs the
+balance above the freezing reserve, which `mo:core` does not expose here
+(the threshold is only readable through `canister_status`). Cost: one
+self-call per cleanup; a cleanup only runs past `maxActiveRecords`.
+
+**Tests**: `pic/icrc3_cleaning_trap.test.ts`. A ledger with 45T, `archiveCycles`
+20T and a freezing reserve of ~30T creates no archive and sends no cycles;
+with the reserve back to 30 days it archives again with no upgrade, every
+block exactly once across the ledger and the archive. Red without the patch
+(no archive after 30 more blocks).
+
+### Not patched: `bCleaning` after a failed archive creation
+
+`check_clean_up` sets `bCleaning := true`, then awaits the archive creation
+with no `try`. If the creation is refused after that `await` (a new archive
+whose install fails, for instance), the flag stays true and the ledger never
+archives again. Measured in pic with `archiveCycles` just above the creation
+fee (500_100_000_000), 70 blocks: as is, **1** archive canister created and
+~502B cycles spent, then nothing more. Releasing the flag in a `finally` makes
+every later block retry: **10** orphan canisters and ~5_010B spent, one
+creation fee burned per block. A `finally` is left out for that reason: a dead
+archiver costs nothing, a retrying one drains the ledger. Recovery is left to
+the ledger, outside this fork: a reset of the flag in `src/Token.mo`'s
+postupgrade (planned, not in this change). No cleanup can be in flight across
+an upgrade, since the IC refuses to upgrade a canister with pending callbacks,
+so a `true` found there is always stale.
+
 ## `icrc2-mo` — fork of 0.2.1
 
 Copied unpatched from the registry first (its own commit; every file matches its
