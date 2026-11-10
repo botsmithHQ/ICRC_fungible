@@ -1655,6 +1655,17 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
     // again, but TimerTool keeps the id of its last timer in stable state and
     // cancels it the next time it schedules. That id may now belong to a new,
     // unrelated timer (e.g. ICRC-3 archiving), so forget it first.
+    //
+    // This must run before any TimerTool call in this function. If it ran
+    // after `initialize` below, it would forget the timer the re-arm just
+    // set, and that timer would still fire as an orphan.
+    // With that re-arm in place this line is defensive: the first timer of
+    // field initialization is always the ClassPlus manager's (id 1, see
+    // `org_icdevs_class_plus_manager`), so the kept id is never 1 and the
+    // re-arm's cancel finds no live timer to hit. Without the re-arm this
+    // line is required: the first schedule would then come from a later
+    // block and could cancel the ICRC-3 archive timer
+    // (pic/timertool_upgrade.test.ts).
     switch (tt_state) {
       case (?#v0_1_0(#data(s))) { s.nextTimer := null };
       case (_) {};
