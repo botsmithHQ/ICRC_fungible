@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New query `icrc3_get_stats()`** (`src/Token.mo`), open to anyone, no arguments: the ICRC-3
+  archiving state from the icrc3 library's `get_stats()`. `localLedgerSize` (blocks still on the
+  ledger), `firstIndex`, `lastIndex`, `bCleaning` (an archiving pass in flight), the archives
+  with the range each holds, and the bounds (`maxActiveRecords`, `settleToRecords`,
+  `archiveCycles` and the rest). Same method and type as the icrc3 mixin, so `token-mixin.mo`
+  already had it. Archiving needs a balance above `2 * archiveCycles`; below it no archive is
+  created and `localLedgerSize` stays over `maxActiveRecords`, which a monitor can read here. It
+  is a query, answered by one replica: for monitoring, not for a decision that needs certified
+  data.
 - **A one-way supply lock** (`src/Token.mo`, `src/token-mixin.mo`). `admin_lock_supply()`, by the
   owner and never by the anonymous principal, sets a flag that no method clears. A second call
   changes nothing. From then on:
@@ -123,6 +132,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The ICRC-106 index principal is stored as text** (`vendor/icrc1-mo`). ICRC-106 defines
+  `icrc106:index_principal` in `icrc1_metadata` as the principal's textual form; it was a
+  `#Blob` of the principal's bytes. `set_icrc106_index_principal` now stores `#Text`.
+  `icrc106_get_index_principal` reads it, and still reads a `#Blob` written by an earlier build:
+  call `set_icrc106_index_principal` once after upgrading to rewrite the metadata. ICRC-106 was
+  already listed in `icrc1_supported_standards` and `icrc10_supported_standards`.
 - **`upgradeArchive` no longer fails in silence** (`src/Token.mo`). It dropped the per-archive
   results, marked the upgrade complete even when every archive failed, and `getUpgradeError`
   answered `""`. A ledger that ran it on an earlier build keeps that completion across the
