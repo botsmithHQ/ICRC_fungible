@@ -1362,11 +1362,24 @@ module {
       // ICRC-106: Index Principal
       // =====================================================================
 
+      // LOCAL PATCH (ICRC-106 as text): ICRC-106 defines
+      // `icrc106:index_principal` as "(text): The textual representation of
+      // the principal of the associated index canister", and it "MUST
+      // represent the textual form of the principal returned by
+      // `icrc106_get_index_principal`" (ICRC-106.md lines 28 and 58).
+      // Upstream stored `#Blob(Principal.toBlob p)`, so a client reading the
+      // metadata as the standard says found no text. The setter now stores
+      // `#Text(Principal.toText p)` and the getter reads it back. A ledger set
+      // by an earlier build still holds the `#Blob` until the setter runs
+      // again; the getter keeps answering it meanwhile.
+
       /// Returns the index principal from metadata, if set.
       public func get_icrc106_index_principal() : Icrc106GetResult {
         for (item in metadata().vals()) {
           if (item.0 == "icrc106:index_principal") {
             switch (item.1) {
+              case (#Text(t)) return #Ok(Principal.fromText(t));
+              // Stored by a build before the LOCAL PATCH above.
               case (#Blob(b)) return #Ok(Principal.fromBlob(b));
               case (_) {};
             };
@@ -1380,7 +1393,8 @@ module {
       public func set_icrc106_index_principal(principal : ?Principal) {
         switch(principal) {
           case(?p) {
-            ignore update_ledger_info([#Metadata("icrc106:index_principal", ?#Blob(Principal.toBlob(p)))]);
+            // LOCAL PATCH (ICRC-106 as text): see `get_icrc106_index_principal`.
+            ignore update_ledger_info([#Metadata("icrc106:index_principal", ?#Text(Principal.toText(p)))]);
           };
           case(null) {
             ignore update_ledger_info([#Metadata("icrc106:index_principal", null)]);
