@@ -86,12 +86,15 @@ with 0.4.0–0.4.3, even one already at v0_2_0: the upgrade is refused with
 0.4.0–0.4.3 state has to be **reinstalled**, not upgraded. Archives are not
 affected: their stable variables do not hold the v0_1_0 type.
 
-**Root `mops.lock`**: mops 2.13.1 checks the lock against a hash of the root
-`mops.toml` only, so it does not see new dependencies of a local-path fork:
-with the old lock, `mops sources` leaves out `map` and `vector` and the build
-fails on `mo:vector`. Rebuild the lock (move it aside, `mops install --lock
-update`), then put the `./vendor/...` paths back (see the caveat at the end).
-A consumer that resolves this fork through its own lock needs the same.
+**Root `mops.lock`**: mops 2.13.1 checked the lock against a hash of the root
+`mops.toml` only, so it did not see new dependencies of a local-path fork:
+with the old lock, `mops sources` left out `map` and `vector` and the build
+failed on `mo:vector`, and the lock had to be rebuilt by hand. mops 3.6.0
+(the repo's CLI since then) also hashes the forks' own `mops.toml`
+(`localDepsHash`): a fork that changes its dependencies makes `mops install`
+rewrite the lock, and CI's lock guard stays red until the rewritten lock is
+committed (see the note at the end). A consumer that resolves this fork
+through its own lock needs the same.
 
 **Baseline wasms of the pic suite**: `pic/build-baseline-wasm.sh` builds the
 ledger at refs that predate this change. It applies the same four-file delta to
@@ -354,22 +357,30 @@ with `bash pic/build-token-wasm.sh`). Red against 0.2.1, green against this fork
 by item (icrc4-mo is not affected and is not forked), and pins the known limit
 above (`icrc1_transfer` traps, minting nothing).
 
-## `mops.lock` caveat (mops CLI 2.13.1)
+## `mops.lock` and the local-path forks (mops CLI 3.6.0)
 
-When mops first resolves a local-path dependency it writes an **absolute** path
-into `mops.lock`:
+`mops.lock` is written by the mops CLI in `MOPS_CLI_VERSION`
+(`.github/workflows/ci.yml`), 3.6.0; locally, `npx ic-mops@3.6.0`. CI runs
+`mops install` and fails if it rewrote the lock: another CLI, or a change to
+the root `mops.toml` or to a fork's `mops.toml`, rewrites it. After such a
+change, run `npx ic-mops@3.6.0 install` and commit the lock it writes.
 
-```json
-"icrc1-mo": "/Users/<someone>/.../ICRC_fungible/vendor/icrc1-mo",
-```
-
-`mops.lock` is committed, so that path has to be made relative by hand — and it
-must keep a `./` (or `../`) prefix, otherwise mops reads it as a *version*
-(`Package 'icrc1-mo@vendor/icrc1-mo' not found`). The committed form is:
+The forks stay in the lock as relative paths, with their `./` prefix (without
+it mops reads the path as a *version*: `Package 'icrc1-mo@vendor/icrc1-mo' not
+found`):
 
 ```json
 "icrc1-mo": "./vendor/icrc1-mo",
 ```
 
-Later `mops install` runs preserve it. If a lockfile diff ever shows an absolute
-path with someone's home directory in it, put the relative form back.
+3.6.0 writes them that way, also when it builds the lock from nothing. mops
+2.13.1 wrote an **absolute** path the first time it resolved a local-path
+dependency (`/Users/<someone>/.../ICRC_fungible/vendor/icrc1-mo`), which had to
+be made relative by hand. If a lockfile diff ever shows an absolute path with
+someone's home directory in it, put the relative form back.
+
+Two trees the pic suite builds still carry a lock written by 2.13.1: index.mo
+at its pinned commit (`pic/build-index-wasm.sh`) and every baseline ref of
+`pic/build-baseline-wasm.sh`. 3.6.0 re-resolves those locks and rewrites them
+(the baseline would get another `base`), so both scripts install and build them
+with `MOPS2`, a 2.x CLI (`MOPS2_CLI_VERSION` in CI).

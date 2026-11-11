@@ -57,7 +57,10 @@ See `CHANGELOG.md` for what each of these checks covers and what it does not.
   passes against the sharing build, fails for another reason (a missing wasm, a trap in setup) or was renamed
   fails the job (`pic/icrc85-counterproof-check.mjs` holds the list).
 
-Locally, with the mops CLI that wrote `mops.lock` (2.x; see `MOPS_CLI_VERSION` in `ci.yml`):
+Locally, the `mops` first on `PATH` has to be the CLI that wrote `mops.lock` (3.6.0, `MOPS_CLI_VERSION` in
+`ci.yml`; the build scripts call `mops`, so an alias does not reach them), and `MOPS2` the path of a 2.x CLI
+(`MOPS2_CLI_VERSION`): index.mo and the baseline refs keep locks written by 2.13.1, and the build scripts install
+those with it (`vendor/README.md`, last section):
 `mops install && (cd pic && npm ci) && bash pic/build-token-wasm.sh && bash pic/build-index-wasm.sh`, then
 `(cd pic && npm test)` and `bash pic/icrc85-counterproof.sh`.
 
