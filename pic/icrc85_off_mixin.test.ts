@@ -32,6 +32,7 @@ const MIXIN_WASM = wasmPath('TOKEN_MIXIN_WASM', 'token-mixin');
 const MIXIN_ON_WASM = wasmPath('TOKEN_MIXIN_ICRC85_ON_WASM', 'token_mixin_pre_refusal');
 
 const LEDGER_STREAMS = [NAMESPACES.icrc1, NAMESPACES.icrc3, NAMESPACES.timerTool];
+const ARCHIVE_STREAMS = [NAMESPACES.timerTool, NAMESPACES.archive];
 
 const owner = createIdentity(1).getPrincipal();
 const holder = createIdentity(2);
@@ -180,6 +181,22 @@ describe('ICRC-85 is off in token-mixin', () => {
       const next = (await admin.get_icrc85_stats()).nextCycleActionId;
       expect(next, `after the upgrade, +${days}d: the queued share was rescheduled`).toHaveLength(1);
       expect(next[0], `after the upgrade, +${days}d: the queued share ran`).not.toBe(queued[0]);
+    }
+  });
+
+  it('positive control: archives of a mixin with its switches null pay on both of their streams', async () => {
+    const collector = await installCollector(pic);
+    const { id, actor: ledger } = await installMixin(pic, MIXIN_ON_WASM, 'smallArchives');
+    await transferUntil(pic, ledger, owner, holder, async () => (await archives(ledger, id)).length >= 2);
+    const list = await archives(ledger, id);
+    expect(list.length).toBeGreaterThanOrEqual(2);
+
+    await advanceDays(pic, 8);
+    for (const a of list) {
+      const counts = await countByNamespace(collector, a.canister_id);
+      for (const ns of ARCHIVE_STREAMS) {
+        expect(counts[ns] ?? 0, `paying mixin archive ${a.canister_id.toText()} stream ${ns} should pay`).toBeGreaterThanOrEqual(1);
+      }
     }
   });
 

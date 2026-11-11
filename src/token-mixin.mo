@@ -463,9 +463,20 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
     // only the timer itself sets it back to null. An upgrade between the block
     // that armed it and its run leaves the field set and the ledger never
     // archives again; with it null, the next block arms a new timer.
+    //
+    // `bCleaning` marks an archiving run in flight. When creating or
+    // installing an archive is rejected, the run throws at that await and
+    // nothing sets the flag back, so every later run returns at once and the
+    // ledger never archives again (vendor/README.md, "Not patched:
+    // bCleaning"). No run can be in flight across an upgrade: the Motoko
+    // runtime refuses `pre_upgrade` while the canister has outstanding
+    // callbacks, so a true found here is always stale. Recovery is stop +
+    // upgrade + start; the next block runs a cleanup again, and an install
+    // that is still rejected costs one archive creation per upgrade
+    // (pic/icrc3_cleaning_trap.test.ts).
     switch (icrc3_migration_state) {
-      case (#v0_2_0(#data(s))) { s.cleaningTimer := null };
-      case (#v0_1_0(#data(s))) { s.cleaningTimer := null };
+      case (#v0_2_0(#data(s))) { s.cleaningTimer := null; s.bCleaning := false };
+      case (#v0_1_0(#data(s))) { s.cleaningTimer := null; s.bCleaning := false };
       case (_) {};
     };
   };

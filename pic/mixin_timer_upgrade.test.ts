@@ -8,6 +8,10 @@
  * Token.mo). This file is separate from pic/icrc85_off_mixin.test.ts because
  * it tests ledger timers, not ICRC-85.
  *
+ * The same postupgrade clears ICRC-3's `bCleaning`, which stays true when an
+ * archive's install is rejected (pic/icrc3_cleaning_trap.test.ts, same
+ * scenario on Token.mo): stop + upgrade + start lets one cleanup run again.
+ *
  * The production `src/token-mixin.mo` is tested UNCHANGED.
  * Wasm: `bash pic/build-token-wasm.sh token-mixin` (or TOKEN_MIXIN_WASM).
  */
@@ -46,23 +50,26 @@ const MixinArgs = IDL.Opt(IDL.Record({
   icrc4: IDL.Opt(IDL.Null),
 }));
 
-/** ~50 records on the ledger, 60 per archive. */
-const SMALL_ARCHIVES = new Uint8Array(IDL.encode([MixinArgs], [[{
-  icrc1: [],
-  icrc2: [],
-  icrc3: {
-    maxActiveRecords: 50n,
-    settleToRecords: 30n,
-    maxRecordsInArchiveInstance: 60n,
-    maxArchivePages: 62500n,
-    archiveIndexType: { Stable: null },
-    maxRecordsToArchive: 25n,
-    archiveCycles: 20_000_000_000_000n,
-    archiveControllers: [],
-    supportedBlocks: [],
-  },
-  icrc4: [],
-}]]));
+/** ~50 records on the ledger, `perArchive` per archive, `archiveCycles` for each new archive. */
+function mixinArgs(archiveCycles = 20_000_000_000_000n, perArchive = 60n): Uint8Array {
+  return new Uint8Array(IDL.encode([MixinArgs], [[{
+    icrc1: [],
+    icrc2: [],
+    icrc3: {
+      maxActiveRecords: 50n,
+      settleToRecords: 30n,
+      maxRecordsInArchiveInstance: perArchive,
+      maxArchivePages: 62500n,
+      archiveIndexType: { Stable: null },
+      maxRecordsToArchive: 25n,
+      archiveCycles,
+      archiveControllers: [],
+      supportedBlocks: [],
+    },
+    icrc4: [],
+  }]]));
+}
+const SMALL_ARCHIVES = mixinArgs();
 
 let picServer: PocketIcServer;
 let pic: PocketIc;
@@ -154,5 +161,87 @@ describe('token-mixin timer ids kept in stable state across an upgrade', () => {
     const { before, after } = await archivingAfterStopAtLimit(true);
     expect(before).toBe(0n); // the timer had not fired before the upgrade
     expect(after).toBeGreaterThan(0n);
+  }, 300_000);
+
+  it('icrc3 bCleaning: after a rejected archive install, stop + upgrade + start archives again, one creation per upgrade', async () => {
+    // The creation fee of an application subnet and 100M more: the archive
+    // canister is created, its install is rejected.
+    const shortCycles = 500_100_000_000n;
+    const args = mixinArgs(shortCycles, 1000n);
+    const ledgerId = await pic.createCanister({ sender: owner, cycles: 45_000_000_000_000n });
+    await pic.installCode({ canisterId: ledgerId, wasm: readFileSync(MIXIN_WASM), arg: args, sender: owner });
+    for (let i = 0; i < 5; i++) await pic.tick();
+    const ledger = pic.createActor<any>(ledgerIdl, ledgerId);
+    /** The `n`-th canister id PocketIC hands out after the ledger's. */
+    const nth = (n: number) => {
+      const bytes = new Uint8Array(ledgerId.toUint8Array());
+      const view = new DataView(bytes.buffer);
+      view.setBigUint64(0, view.getBigUint64(0) + BigInt(n));
+      return Principal.fromUint8Array(bytes);
+    };
+    const created = async () => {
+      let n = 0;
+      while ((await pic.getCanisterSubnetId(nth(n + 1))) !== null) n++;
+      return n;
+    };
+    let amount = 1_000n;
+    const send = async () => {
+      ledger.setIdentity(holder);
+      const r = await ledger.icrc1_transfer({
+        from_subaccount: [], to: { owner: RECIPIENT, subaccount: [] },
+        amount: amount++, fee: [], memo: [], created_at_time: [],
+      });
+      expect('Ok' in r).toBe(true);
+    };
+    const blocks = async (n: number) => {
+      for (let i = 0; i < n; i++) { await send(); await pic.tick(); await pic.tick(); }
+      await settle(5);
+    };
+    const upgrade = async () => {
+      await pic.stopCanister({ canisterId: ledgerId, sender: owner });
+      await pic.upgradeCanister({
+        canisterId: ledgerId, wasm: readFileSync(MIXIN_WASM), arg: args, sender: owner,
+        upgradeModeOptions: EOP_UPGRADE,
+      });
+      await pic.startCanister({ canisterId: ledgerId, sender: owner });
+      await settle(3);
+    };
+    ledger.setPrincipal(owner);
+    const minted = await ledger.mint({
+      to: { owner: holder.getPrincipal(), subaccount: [] }, amount: 1_000_000_000_000n, memo: [], created_at_time: [],
+    });
+    expect('Ok' in minted).toBe(true);
+
+    // 70 blocks: one cleanup creates a canister, its install is rejected and
+    // no later block runs another.
+    await blocks(69);
+    expect(await archived(ledger, ledgerId)).toBe(0n);
+    expect(await created(), 'one canister created, no retry per block').toBe(1);
+
+    // Install still rejected: the upgrade lets exactly one cleanup run.
+    await upgrade();
+    await blocks(30);
+    expect(await archived(ledger, ledgerId)).toBe(0n);
+    expect(await created(), 'the upgrade let exactly one cleanup run').toBe(2);
+
+    // Install accepted: `archiveCycles` is fixed in stable state, so the test
+    // tops up the new canister in the round after its creation, before the
+    // install reaches it.
+    await upgrade();
+    const next = nth((await created()) + 1);
+    await send();
+    let toppedUp = false;
+    for (let t = 0; t < 30 && !toppedUp; t++) {
+      await pic.tick();
+      if ((await pic.getCanisterSubnetId(next)) !== null) {
+        await pic.addCycles(next, 2_000_000_000_000);
+        toppedUp = true;
+      }
+    }
+    expect(toppedUp, 'a cleanup ran after the second upgrade').toBe(true);
+    await blocks(30);
+    const list = await archives(ledger, ledgerId);
+    expect(list.map((a) => a.canister_id.toText())).toEqual([next.toText()]);
+    expect(await archived(ledger, ledgerId)).toBeGreaterThan(0n);
   }, 300_000);
 });
