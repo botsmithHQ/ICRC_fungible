@@ -15,8 +15,9 @@ import { basename } from 'node:path';
 
 // `expectNoGrowth` in icrc85_off*.test.ts: "<what>: stream <ns> sent cycles: expected N to be M".
 const SENT_CYCLES = /^AssertionError: .*stream .* sent cycles: expected \d+ to be \+?\d+/;
-// timertool_upgrade.test.ts: the collector streams that end in "@ <ledger id>" must be [].
-const LEDGER_STREAMS = /^AssertionError: expected \[ .*org\.icdevs\.icrc85.* \] to deeply equal \[\]/;
+// timertool_upgrade.test.ts: the collector streams that end in "@ <ledger id>" must be []
+// (its only `toEqual([])`; vitest abbreviates the array, e.g. "expected [ …(3) ]").
+const LEDGER_STREAMS = /^AssertionError: expected \[ .+ \] to deeply equal \[\]$/;
 
 const GUARDS = [
   ['icrc85_off.test.ts', 'a fresh ledger sends nothing, on any stream', SENT_CYCLES],
