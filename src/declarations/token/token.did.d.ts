@@ -323,6 +323,25 @@ export type SetFeeCollectorError = { 'InvalidAccount' : string } |
 export type SetFeeCollectorResult = { 'Ok' : bigint } |
   { 'Err' : SetFeeCollectorError };
 export type Subaccount = Uint8Array | number[];
+export interface Stats {
+  'archives' : Array<[Principal, TransactionRange]>,
+  'bCleaning' : boolean,
+  'constants' : {
+    'archiveProperties' : {
+      'archiveControllers' : [] | [[] | [Array<Principal>]],
+      'archiveCycles' : bigint,
+      'maxActiveRecords' : bigint,
+      'maxRecordsInArchiveInstance' : bigint,
+      'maxRecordsToArchive' : bigint,
+      'settleToRecords' : bigint,
+    },
+  },
+  'firstIndex' : bigint,
+  'lastIndex' : bigint,
+  'ledgerCanister' : Principal,
+  'localLedgerSize' : bigint,
+  'supportedBlocks' : Array<BlockType>,
+}
 export interface SupportedStandard { 'url' : string, 'name' : string }
 export type Timestamp = bigint;
 export interface Tip {
@@ -420,6 +439,12 @@ export interface Token {
   'icrc2_transfer_from' : ActorMethod<[TransferFromArgs], TransferFromResponse>,
   'icrc3_get_archives' : ActorMethod<[GetArchivesArgs], GetArchivesResult>,
   'icrc3_get_blocks' : ActorMethod<[GetBlocksArgs], GetBlocksResult>,
+  /**
+   * / The ICRC-3 archiving state, open to anyone. Archiving needs a balance
+   * / above 2 * archiveCycles; below it localLedgerSize stays over
+   * / maxActiveRecords and no archive is created.
+   */
+  'icrc3_get_stats' : ActorMethod<[], Stats>,
   'icrc3_get_tip_certificate' : ActorMethod<[], [] | [DataCertificate]>,
   'icrc3_supported_block_types' : ActorMethod<[], Array<BlockType>>,
   'icrc4_balance_of_batch' : ActorMethod<

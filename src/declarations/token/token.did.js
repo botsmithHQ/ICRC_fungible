@@ -476,6 +476,25 @@ export const idlFactory = ({ IDL }) => {
     'length' : IDL.Nat,
   });
   const GetBlocksArgs = IDL.Vec(TransactionRange);
+  const Stats = IDL.Record({
+    'archives' : IDL.Vec(IDL.Tuple(IDL.Principal, TransactionRange)),
+    'bCleaning' : IDL.Bool,
+    'constants' : IDL.Record({
+      'archiveProperties' : IDL.Record({
+        'archiveControllers' : IDL.Opt(IDL.Opt(IDL.Vec(IDL.Principal))),
+        'archiveCycles' : IDL.Nat,
+        'maxActiveRecords' : IDL.Nat,
+        'maxRecordsInArchiveInstance' : IDL.Nat,
+        'maxRecordsToArchive' : IDL.Nat,
+        'settleToRecords' : IDL.Nat,
+      }),
+    }),
+    'firstIndex' : IDL.Nat,
+    'lastIndex' : IDL.Nat,
+    'ledgerCanister' : IDL.Principal,
+    'localLedgerSize' : IDL.Nat,
+    'supportedBlocks' : IDL.Vec(BlockType),
+  });
   Value__1.fill(
     IDL.Variant({
       'Int' : IDL.Int,
@@ -666,6 +685,7 @@ export const idlFactory = ({ IDL }) => {
         [GetBlocksResult],
         ['query'],
       ),
+    'icrc3_get_stats' : IDL.Func([], [Stats], ['query']),
     'icrc3_get_tip_certificate' : IDL.Func(
         [],
         [IDL.Opt(DataCertificate)],

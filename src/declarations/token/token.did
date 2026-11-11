@@ -279,6 +279,10 @@ type Token =
    icrc2_transfer_from: (args: TransferFromArgs) -> (TransferFromResponse);
    icrc3_get_archives: (args: GetArchivesArgs) -> (GetArchivesResult) query;
    icrc3_get_blocks: (args: GetBlocksArgs) -> (GetBlocksResult) query;
+   /// The ICRC-3 archiving state, open to anyone. Archiving needs a balance
+   /// above 2 * archiveCycles; below it localLedgerSize stays over
+   /// maxActiveRecords and no archive is created.
+   icrc3_get_stats: () -> (Stats) query;
    icrc3_get_tip_certificate: () -> (opt DataCertificate) query;
    icrc3_supported_block_types: () -> (vec BlockType) query;
    icrc4_balance_of_batch: (request: BalanceQueryArgs) ->
@@ -293,6 +297,31 @@ type Token =
    set_icrc106_index_principal: ("principal": opt principal) -> ();
    update_archive_controllers: () -> (vec ArchiveControllersResult);
    upgradeArchive: (bOverride: bool) -> (vec ArchiveUpgradeResult);
+ };
+type Stats = 
+ record {
+   archives: vec record {
+                   principal;
+                   TransactionRange;
+                 };
+   bCleaning: bool;
+   constants:
+    record {
+      archiveProperties:
+       record {
+         archiveControllers: opt opt vec principal;
+         archiveCycles: nat;
+         maxActiveRecords: nat;
+         maxRecordsInArchiveInstance: nat;
+         maxRecordsToArchive: nat;
+         settleToRecords: nat;
+       };
+    };
+   firstIndex: nat;
+   lastIndex: nat;
+   ledgerCanister: principal;
+   localLedgerSize: nat;
+   supportedBlocks: vec BlockType;
  };
 type Tip = 
  record {
