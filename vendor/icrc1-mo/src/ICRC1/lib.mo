@@ -1394,7 +1394,7 @@ module {
         switch(principal) {
           case(?p) {
             // LOCAL PATCH (ICRC-106 as text): see `get_icrc106_index_principal`.
-            ignore update_ledger_info([#Metadata("icrc106:index_principal", ?#Blob(Principal.toBlob(p)))]);
+            ignore update_ledger_info([#Metadata("icrc106:index_principal", ?#Text(Principal.toText(p)))]);
           };
           case(null) {
             ignore update_ledger_info([#Metadata("icrc106:index_principal", null)]);

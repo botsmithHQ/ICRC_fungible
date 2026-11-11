@@ -138,8 +138,6 @@ describe('icrc3_get_stats', () => {
     expect(await read.cycles()).toBeLessThan(2n * UNAFFORDABLE_ARCHIVE_CYCLES);
     expect(await read.cycles()).toBeLessThanOrEqual(LEDGER_CYCLES);
     const max = initial.constants.archiveProperties.maxActiveRecords;
-    // TEMPORARY COUNTER-PROOF: fund the ledger above 2 × archiveCycles.
-    await pic.addCycles(ledgerId, 1_000_000_000_000_000n);
 
     // Well past the bound, with every archiving pass given its ticks. An
     // archive showing up also stops it, so that a ledger that can pay for one
