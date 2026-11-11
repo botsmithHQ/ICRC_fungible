@@ -249,7 +249,11 @@ during the `await` could pass the guard too, and two cleanups would archive the
 same blocks. The alternative, checking the funds before sending, needs the
 balance above the freezing reserve, which `mo:core` does not expose here
 (the threshold is only readable through `canister_status`). Cost: one
-self-call per cleanup; a cleanup only runs past `maxActiveRecords`.
+self-call per cleanup; a cleanup only runs past `maxActiveRecords`. While the
+funds stay short, every block arms a timer whose cleanup traps again: ~36.6M
+cycles per block (measured 52.5M against 16.0M below `maxActiveRecords`), and
+no cycles leave the ledger. Keep the ledger above `2 × archiveCycles` and at
+least `archiveCycles` above its freezing reserve.
 
 **Tests**: `pic/icrc3_cleaning_trap.test.ts`. A ledger with 45T, `archiveCycles`
 20T and a freezing reserve of ~30T creates no archive and sends no cycles;
@@ -267,11 +271,27 @@ fee (500_100_000_000), 70 blocks: as is, **1** archive canister created and
 ~502B cycles spent, then nothing more. Releasing the flag in a `finally` makes
 every later block retry: **10** orphan canisters and ~5_010B spent, one
 creation fee burned per block. A `finally` is left out for that reason: a dead
-archiver costs nothing, a retrying one drains the ledger. Recovery is left to
-the ledger, outside this fork: a reset of the flag in `src/Token.mo`'s
-postupgrade (planned, not in this change). No cleanup can be in flight across
-an upgrade, since the IC refuses to upgrade a canister with pending callbacks,
-so a `true` found there is always stale.
+archiver costs nothing, a retrying one drains the ledger.
+
+Recovery is in the ledger, outside this library: the postupgrade of
+`src/Token.mo` and `src/token-mixin.mo` sets the flag back to false, next to
+`cleaningTimer`. A `true` found there is always stale. The Motoko runtime
+(enhanced orthogonal persistence) refuses `pre_upgrade` while the canister has
+outstanding callbacks ("canister_pre_upgrade attempted with outstanding message
+callbacks", measured with a cleanup awaiting the archive install), so no
+cleanup is in flight across an upgrade that succeeds. To recover, stop the
+ledger, upgrade it and start it: the next block runs one cleanup. If the
+install is still refused, that cleanup creates one more canister (~500B here)
+and the flag sticks again: one creation per upgrade, not one per block. In the
+stuck state an upgrade without a stop is accepted too (nothing is in flight)
+and has the same effect; the stop is what keeps an upgrade from being refused
+when a cleanup happens to be running. `skip_pre_upgrade` would get past the
+check, but it is no recovery: on this ledger it loses the whole state
+(measured). `archiveCycles` lives in stable state and an upgrade does not apply
+init args, so an upgrade does not change it. Tests:
+`pic/icrc3_cleaning_trap.test.ts` (Token.mo) and
+`pic/mixin_timer_upgrade.test.ts` (mixin), red without the reset (no cleanup
+runs after the upgrade).
 
 ## `icrc2-mo` — fork of 0.2.1
 
