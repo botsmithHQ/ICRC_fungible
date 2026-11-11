@@ -12,7 +12,7 @@
 #                   checked at install (pic/archive_upgrade_results.test.ts)
 #
 # It checks out the ref into a throwaway git worktree, resolves that tree's
-# own dependencies, compiles its src/Token.mo (or [main]) with the same flags as
+# own dependencies (with a 2.x mops CLI, MOPS2), compiles its src/Token.mo (or [main]) with the same flags as
 # build-token-wasm.sh, and writes
 #   .dfx/local/canisters/<name>/<name>.wasm.gz
 # The throwaway worktree is removed on exit.
@@ -41,6 +41,17 @@ if ! git cat-file -e "$BASELINE_REF^{commit}" 2>/dev/null; then
   echo "baseline $BASELINE_REF is not in this clone's history (shallow clone?): git fetch --unshallow, or pass a ref" >&2
   exit 1
 fi
+# Every baseline ref has a mops.lock written by a 2.x mops CLI. The repo's CLI
+# (3.x, MOPS_CLI_VERSION in .github/workflows/ci.yml) re-resolves such a lock
+# and rewrites it, with a different dependency set (its `base`, for one), so
+# the baseline would no longer be the ledger as it was built at that ref. The
+# throwaway worktree is installed and built with MOPS2, a 2.x CLI: CI points it
+# at ic-mops@$MOPS2_CLI_VERSION; otherwise `mops` on PATH must be one.
+MOPS2="${MOPS2:-mops}"
+case "$("$MOPS2" --version 2>/dev/null)" in
+  "CLI 2."*) ;;
+  *) echo "MOPS2 ($MOPS2) is not a 2.x mops CLI; the baseline refs have 2.x mops.lock files" >&2; exit 1 ;;
+esac
 # --- icrc3-mo 0.4.3 -> 0.4.4 in the baseline (TEMPORARY, see vendor/README.md) ---
 # icrc3-mo 0.4.4 changed the stored type of its v0_1_0 migration state. A ledger
 # built with 0.4.0-0.4.3 cannot be upgraded in place to a 0.4.4 build: the
@@ -124,15 +135,15 @@ patch_icrc3_to_044() {
 git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
 (
   cd "$TMP/src"
-  mops install >/dev/null
-  MOC="$(mops toolchain bin moc)"
-  ICRC3_SRC="$(mops sources | awk '$1 == "--package" && $2 == "icrc3-mo" { print $3 }')"
+  "$MOPS2" install >/dev/null
+  MOC="$("$MOPS2" toolchain bin moc)"
+  ICRC3_SRC="$("$MOPS2" sources | awk '$1 == "--package" && $2 == "icrc3-mo" { print $3 }')"
   if [ -z "$ICRC3_SRC" ]; then
     echo "icrc3 delta: baseline $BASELINE_REF does not resolve icrc3-mo" >&2
     exit 1
   fi
   patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
-  SOURCES="$(mops sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
+  SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
   # shellcheck disable=SC2086
   "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null

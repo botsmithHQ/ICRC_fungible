@@ -1,6 +1,7 @@
 name: Set up the PocketIC suite
 description: >
-  Node, the pinned mops CLI, the mops cache, `mops install` (which fetches the
+  Node, the pinned mops CLIs (MOPS_CLI_VERSION, and MOPS2_CLI_VERSION for the
+  trees with a 2.x lock), the mops cache, `mops install` (which fetches the
   moc and pocket-ic that mops.toml pins), `npm ci` in pic/, and every wasm the
   pic tests load: pic/build-token-wasm.sh (baselines included, which is why
   the checkout needs full history) and pic/build-index-wasm.sh (index.mo,
@@ -30,18 +31,25 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.npm
-        key: npm-${{ runner.os }}-${{ env.MOPS_CLI_VERSION }}-${{ hashFiles('pic/package-lock.json') }}
+        key: npm-${{ runner.os }}-${{ env.MOPS_CLI_VERSION }}-${{ env.MOPS2_CLI_VERSION }}-${{ hashFiles('pic/package-lock.json') }}
 
-    # Not `npm install -g`: a prefix of its own, put on PATH.
-    - name: Install the mops CLI
+    # Not `npm install -g`: a prefix of its own, put on PATH. The 2.x CLI gets
+    # its own prefix too, off PATH: only MOPS2 points at it, for
+    # pic/build-index-wasm.sh and pic/build-baseline-wasm.sh.
+    - name: Install the mops CLIs
       shell: bash
       run: |
         npm install --no-audit --no-fund --prefix "$RUNNER_TEMP/mops-cli" "ic-mops@${MOPS_CLI_VERSION}"
         echo "$RUNNER_TEMP/mops-cli/node_modules/.bin" >> "$GITHUB_PATH"
         "$RUNNER_TEMP/mops-cli/node_modules/.bin/mops" --version
+        npm install --no-audit --no-fund --prefix "$RUNNER_TEMP/mops2-cli" "ic-mops@${MOPS2_CLI_VERSION}"
+        echo "MOPS2=$RUNNER_TEMP/mops2-cli/node_modules/.bin/mops" >> "$GITHUB_ENV"
+        "$RUNNER_TEMP/mops2-cli/node_modules/.bin/mops" --version
 
-    # mops.lock is written by mops 2.x; a newer CLI resolves it differently and
-    # rewrites it. Fail instead of building against a different dependency set.
+    # mops.lock is written by MOPS_CLI_VERSION. Another CLI (a 2.x one, or a
+    # later 3.x that resolves differently) or a mops.toml / vendor/*/mops.toml
+    # change that the lock does not follow makes `mops install` rewrite it.
+    # Fail instead of building against a different dependency set.
     - name: mops install
       shell: bash
       run: |

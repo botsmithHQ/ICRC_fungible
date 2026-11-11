@@ -17,8 +17,14 @@ env:
   # Node for the pic suite (vitest, @dfinity/pic). moc and pocket-ic come from
   # mops.toml's [toolchain], fetched by `mops install`.
   NODE_VERSION: "26.13.0"
-  # The mops CLI that writes mops.lock as committed (a 3.x CLI rewrites it).
-  MOPS_CLI_VERSION: "2.13.1"
+  # The mops CLI that writes mops.lock as committed: `mops install` has to
+  # leave it as it is (.github/actions/setup-pic).
+  MOPS_CLI_VERSION: "3.6.0"
+  # The 2.x CLI that wrote the mops.lock of index.mo (at its pinned commit) and
+  # of the baseline refs of pic/build-baseline-wasm.sh. A 3.x CLI re-resolves
+  # those locks and rewrites them, so those trees are installed with this one
+  # (MOPS2 in pic/build-index-wasm.sh and pic/build-baseline-wasm.sh).
+  MOPS2_CLI_VERSION: "2.13.1"
 
 jobs:
   # The whole PocketIC suite of pic/, as a developer runs it.
