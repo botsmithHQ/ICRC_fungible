@@ -1,5 +1,11 @@
 [dependencies]
 core = "2.1.0"
+# Pinned so the tree holds one `base`, the one the ledger is built with in
+# production. src/ does not import mo:base; star, account, vector, sha2@0.1.6,
+# itertools ask for different ones, and without a root pin mops 3.x resolves
+# `base` to 0.14.14 (mops 2.13.1 to a 2023 git copy, motoko-base moc-0.8.4).
+# 0.16.0 is the copy ic-certification and buffer already pull as `base@0`.
+base = "0.16.0"
 # LOCAL FORK of icrc1-mo 0.2.1 — see vendor/README.md. Upstream deletes from a Map
 # while iterating it in `cleanUpRecents`, which traps and rolls back every
 # transfer once a batch of dedup entries expires at the same time.
