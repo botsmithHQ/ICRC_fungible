@@ -645,6 +645,7 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
     #get_transactions : () -> { start : Nat; length : Nat };
     #get_tip : () -> ();
     #archives : () -> ();
+    #icrc3_get_stats : () -> ();
 
     // ICRC-4 endpoints
     #icrc4_transfer_batch : () -> ICRC4.TransferBatchArgs;
@@ -893,7 +894,7 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
         or #icrc2_transfer_from _ or #icrc103_get_allowances _ or #icrc3_get_blocks _
         or #icrc3_get_archives _ or #icrc3_get_tip_certificate _
         or #icrc3_supported_block_types _ or #get_blocks _ or #get_transactions _
-        or #get_tip _ or #archives _ or #icrc4_maximum_update_batch_size _
+        or #get_tip _ or #archives _ or #icrc3_get_stats _ or #icrc4_maximum_update_batch_size _
         or #icrc4_maximum_query_batch_size _ or #icrc106_get_index_principal _
         or #set_icrc106_index_principal _ or #icrc107_set_fee_collector _
         or #icrc107_get_fee_collector _ or #get_data_certificate _ or #is_ledger_ready _
@@ -1050,7 +1051,7 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
         or #icrc1_metadata _ or #icrc1_total_supply _ or #icrc1_minting_account _
         or #icrc1_supported_standards _ or #icrc10_supported_standards _
         or #icrc3_get_tip_certificate _ or #icrc3_supported_block_types _
-        or #get_tip _ or #archives _ or #icrc4_maximum_update_batch_size _
+        or #get_tip _ or #archives _ or #icrc3_get_stats _ or #icrc4_maximum_update_batch_size _
         or #icrc4_maximum_query_batch_size _ or #icrc106_get_index_principal _
         or #icrc107_get_fee_collector _ or #get_icrc85_stats _ or #get_index_canister _
         or #deposit_cycles _ or #get_data_certificate _ or #is_ledger_ready _
@@ -1414,6 +1415,19 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
 
   public query func get_tip() : async ICRC3.Tip {
     return icrc3().get_tip();
+  };
+
+  /// The ICRC-3 archiving state, open to anyone: `localLedgerSize` (blocks
+  /// still on the ledger), `lastIndex`, `bCleaning` (an archiving pass in
+  /// flight), the archives with their ranges, and the bounds
+  /// (`maxActiveRecords`, `settleToRecords`, `archiveCycles`). Archiving needs
+  /// a balance above `2 * archiveCycles`; below it `localLedgerSize` stays
+  /// over `maxActiveRecords` and no archive is created, which is what a
+  /// monitor reads here. Same method and type as the icrc3 mixin
+  /// (`token-mixin.mo`). A query: one replica answers, so it is for
+  /// monitoring, not for a decision that needs certified data.
+  public query func icrc3_get_stats() : async ICRC3.Stats {
+    icrc3().get_stats();
   };
 
   public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResults {

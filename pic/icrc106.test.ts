@@ -4,7 +4,7 @@
  * Tests the ICRC-106 (Index Principal) implementation:
  * 1. Controller can set the index principal
  * 2. icrc106_get_index_principal returns the set principal
- * 3. icrc1_metadata includes icrc106:index_principal after set
+ * 3. icrc1_metadata includes icrc106:index_principal, as #Text (ICRC-106), after set
  * 4. Index principal persists across upgrade
  * 5. Returns IndexPrincipalNotSet error before setting
  * 6. Non-controller cannot set index principal
@@ -50,6 +50,16 @@ Value.fill(
 );
 
 const MetaDatum = IDL.Tuple(IDL.Text, Value);
+
+/**
+ * The `icrc106:index_principal` metadata value as ICRC-106 defines it: `#Text`
+ * holding the principal's textual form, which must parse back to itself.
+ */
+function indexPrincipalText(value: any): string {
+  expect(Object.keys(value), 'icrc106:index_principal must be #Text (ICRC-106.md:28,58)').toEqual(['Text']);
+  expect(Principal.fromText(value.Text).toText()).toEqual(value.Text);
+  return value.Text;
+}
 
 // =============== Token Init ===============
 
@@ -313,13 +323,9 @@ describe('ICRC-106 Index Principal Tests', () => {
     const icrc106Entry = decoded.find(([key, _val]: [string, any]) => key === 'icrc106:index_principal');
     
     expect(icrc106Entry).toBeDefined();
-    // The value should be a Blob containing the principal's bytes
-    const [_key, value] = icrc106Entry;
-    expect(value.Blob).toBeDefined();
-    
-    // Verify the blob decodes to the correct principal
-    const principalFromBlob = Principal.fromUint8Array(new Uint8Array(value.Blob));
-    expect(principalFromBlob.toText()).toEqual(fakeIndexPrincipal.toText());
+    // ICRC-106.md:28,58: "(text): The textual representation of the principal
+    // of the associated index canister". A `#Blob` here fails the standard.
+    expect(indexPrincipalText(icrc106Entry[1])).toEqual(fakeIndexPrincipal.toText());
   });
 
   // A non-owner no longer reaches the body by ingress: `inspect` refuses the
@@ -363,8 +369,7 @@ describe('ICRC-106 Index Principal Tests', () => {
     const metadata = IDL.decode([IDL.Vec(MetaDatum)], metaResult)[0] as any[];
     const icrc106Entry = metadata.find(([key, _val]: [string, any]) => key === 'icrc106:index_principal');
     expect(icrc106Entry).toBeDefined();
-    const principalFromBlob = Principal.fromUint8Array(new Uint8Array(icrc106Entry[1].Blob));
-    expect(principalFromBlob.toText()).toEqual(fakeIndexPrincipal2.toText());
+    expect(indexPrincipalText(icrc106Entry[1])).toEqual(fakeIndexPrincipal2.toText());
   });
 
   it('should remove icrc106:index_principal from metadata when unset', async () => {
@@ -454,14 +459,13 @@ describe('ICRC-106 Index Principal Tests', () => {
     const metadata = IDL.decode([IDL.Vec(MetaDatum)], metaResult)[0] as any[];
     const icrc106Entry = metadata.find(([key, _val]: [string, any]) => key === 'icrc106:index_principal');
     expect(icrc106Entry).toBeDefined();
-    const principalFromBlob = Principal.fromUint8Array(new Uint8Array(icrc106Entry[1].Blob));
-    expect(principalFromBlob.toText()).toEqual(fakeIndexPrincipal.toText());
+    expect(indexPrincipalText(icrc106Entry[1])).toEqual(fakeIndexPrincipal.toText());
   });
 
-  it('should include ICRC-106 in supported standards', async () => {
+  it.each(['icrc1_supported_standards', 'icrc10_supported_standards'])('should include ICRC-106 in %s', async (method) => {
     const result = await pic.queryCall({
       canisterId: tokenCanisterId,
-      method: 'icrc10_supported_standards',
+      method,
       arg: IDL.encode([], []),
       sender: admin.getPrincipal(),
     });

@@ -960,7 +960,7 @@ describe('inspect: reads sent as update calls', () => {
         ...[
           'icrc1_name', 'icrc1_symbol', 'icrc1_decimals', 'icrc1_fee', 'icrc1_metadata', 'icrc1_total_supply',
           'icrc1_minting_account', 'icrc1_supported_standards', 'icrc10_supported_standards',
-          'icrc3_get_tip_certificate', 'icrc3_supported_block_types', 'get_tip', 'archives',
+          'icrc3_get_tip_certificate', 'icrc3_supported_block_types', 'get_tip', 'archives', 'icrc3_get_stats',
           'icrc4_maximum_update_batch_size', 'icrc4_maximum_query_batch_size', 'icrc106_get_index_principal',
           'icrc107_get_fee_collector', 'get_icrc85_stats', 'get_index_canister', 'get_data_certificate',
           'is_ledger_ready', 'get_health', 'get_owner', 'get_pending_owner',

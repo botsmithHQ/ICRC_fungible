@@ -51,6 +51,28 @@ points it at any build.
 **Upstream**: https://github.com/icdevsorg/icrc1.mo — remove this fork once a
 release contains the fix.
 
+### Patch: the ICRC-106 index principal is text
+
+**Patch**: `src/ICRC1/lib.mo` → `get_icrc106_index_principal`,
+`set_icrc106_index_principal`.
+
+ICRC-106 defines the metadata entry `icrc106:index_principal` as "(text): The
+textual representation of the principal of the associated index canister", and
+it "MUST represent the textual form of the principal returned by
+`icrc106_get_index_principal`" (ICRC-106.md, lines 28 and 58). Upstream stored
+`#Blob(Principal.toBlob p)`, so a wallet or an explorer reading the metadata as
+the standard says found no text there.
+
+The setter now stores `#Text(Principal.toText p)` and the getter parses it back.
+A ledger whose principal was set by an earlier build keeps the `#Blob` until the
+setter runs again; the getter still answers it meanwhile, so
+`icrc106_get_index_principal` does not go back to `IndexPrincipalNotSet` across
+the upgrade. Call `set_icrc106_index_principal` once after upgrading to put the
+metadata in the standard's form.
+
+**Regression test**: `pic/icrc106.test.ts` reads the metadata value as `#Text`
+and parses it as a principal; it is red with the upstream `#Blob`.
+
 ## `icrc3-mo` — fork of 0.4.4 (was 0.4.3)
 
 Copied unpatched from the registry first (its own commit), so each patch below
