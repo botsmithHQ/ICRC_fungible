@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Node for the pic suite (vitest, @dfinity/pic). moc and pocket-ic come from
+  # mops.toml's [toolchain], fetched by `mops install`.
+  NODE_VERSION: "26.13.0"
+  # The mops CLI that writes mops.lock as committed (a 3.x CLI rewrites it).
+  MOPS_CLI_VERSION: "2.13.1"
+
+jobs:
+  # The whole PocketIC suite of pic/, as a developer runs it.
+  pic:
+    name: pic
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # pic/build-baseline-wasm.sh builds earlier commits of the ledger.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-pic
+      - name: npm test
+        working-directory: pic
+        run: npm test
+
+  # ICRC-85 must never be on in this fork. The guards of pic/ that say it is
+  # off must go red against a ledger with it on: pic/icrc85-counterproof.sh.
+  icrc85-counterproof:
+    name: icrc85-counterproof
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-pic
+      - name: ICRC-85 counterproof
+        run: bash pic/icrc85-counterproof.sh 2> >(grep -v -E '^(codegen/|data segments|shared constants|pool (size|report))' >&2)

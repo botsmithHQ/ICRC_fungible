@@ -52,7 +52,7 @@ if [ ! -f "$INDEX_MO_WASM" ]; then
     INDEX_MO_DIR="$WORKSPACE_DIR/index.mo"
     if [ ! -d "$INDEX_MO_DIR" ]; then
         echo "❌ index.mo project not found at $INDEX_MO_DIR"
-        echo "   Clone: git clone https://github.com/saulemprendedor/index.mo $INDEX_MO_DIR"
+        echo "   Clone: git clone https://github.com/botsmithHQ/index.mo $INDEX_MO_DIR"
         exit 1
     fi
     pushd "$INDEX_MO_DIR" > /dev/null
