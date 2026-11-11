@@ -1,0 +1,60 @@
+name: Set up the PocketIC suite
+description: >
+  Node, the pinned mops CLI, the mops cache, `mops install` (which fetches the
+  moc and pocket-ic that mops.toml pins), `npm ci` in pic/, and every wasm the
+  pic tests load: pic/build-token-wasm.sh (baselines included, which is why
+  the checkout needs full history) and pic/build-index-wasm.sh (index.mo,
+  cloned as a sibling at its pinned commit).
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    # The global mops cache holds the moc / pocket-ic binaries and package
+    # tarballs; .mops is what `mops sources` reads. The baselines run their own
+    # `mops install` in throwaway worktrees, which this cache also warms.
+    - name: Restore the mops cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/mops
+          .mops
+        key: mops-${{ runner.os }}-${{ env.MOPS_CLI_VERSION }}-${{ hashFiles('mops.toml', 'mops.lock') }}
+        restore-keys: |
+          mops-${{ runner.os }}-${{ env.MOPS_CLI_VERSION }}-
+
+    - name: Restore the npm cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: npm-${{ runner.os }}-${{ env.MOPS_CLI_VERSION }}-${{ hashFiles('pic/package-lock.json') }}
+
+    # Not `npm install -g`: a prefix of its own, put on PATH.
+    - name: Install the mops CLI
+      shell: bash
+      run: |
+        npm install --no-audit --no-fund --prefix "$RUNNER_TEMP/mops-cli" "ic-mops@${MOPS_CLI_VERSION}"
+        echo "$RUNNER_TEMP/mops-cli/node_modules/.bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/mops-cli/node_modules/.bin/mops" --version
+
+    # mops.lock is written by mops 2.x; a newer CLI resolves it differently and
+    # rewrites it. Fail instead of building against a different dependency set.
+    - name: mops install
+      shell: bash
+      run: |
+        mops install
+        git diff --exit-code --stat -- mops.lock || { echo "::error::mops install rewrote mops.lock (mops CLI ${MOPS_CLI_VERSION})"; exit 1; }
+
+    - name: npm ci (pic)
+      shell: bash
+      working-directory: pic
+      run: npm ci --no-audit --no-fund
+
+    - name: Build the wasms
+      shell: bash
+      run: |
+        bash pic/build-token-wasm.sh 2> >(grep -v -E '^(codegen/|data segments|shared constants|pool (size|report))' >&2)
+        bash pic/build-index-wasm.sh

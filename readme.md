@@ -41,6 +41,26 @@ See `CHANGELOG.md` for what each of these checks covers and what it does not.
 
 ## Testing
 
+### CI
+
+`.github/workflows/ci.yml` runs on every pull request, on pushes to `main` and on demand, with two jobs:
+
+- **`pic`**: the whole PocketIC suite of `pic/` (`npm test`), after building every wasm it loads
+  (`bash pic/build-token-wasm.sh`, baselines from git history included, and `bash pic/build-index-wasm.sh`,
+  which clones `index.mo` as a sibling checkout at a pinned commit).
+- **`icrc85-counterproof`**: ICRC-85 is off in this fork, and the "off" guards of `pic/` say so. This job
+  checks that they can tell. `pic/build-icrc85-on-wasm.sh` builds the current `src/Token.mo` and
+  `src/token-mixin.mo` with every ICRC-85 kill switch flipped from `?true` to `?false` (in a throwaway copy,
+  nothing else changed), and `pic/icrc85-counterproof.sh` runs the guards against those builds. The job is
+  **green only when every guard is red on its own ICRC-85 assertion** (a stream that "sent cycles", or a
+  collector stream from the ledger). In its log, `RED as expected` lines are the good outcome; a guard that
+  passes against the sharing build, fails for another reason (a missing wasm, a trap in setup) or was renamed
+  fails the job (`pic/icrc85-counterproof-check.mjs` holds the list).
+
+Locally, with the mops CLI that wrote `mops.lock` (2.x; see `MOPS_CLI_VERSION` in `ci.yml`):
+`mops install && (cd pic && npm ci) && bash pic/build-token-wasm.sh && bash pic/build-index-wasm.sh`, then
+`(cd pic && npm test)` and `bash pic/icrc85-counterproof.sh`.
+
 ### Running devefi_ledger_tests (PocketIC Integration Tests)
 
 The [devefi_ledger_tests](https://github.com/Neutrinomic/devefi_ledger_tests) suite provides comprehensive PocketIC-based integration tests for ICRC ledgers. These tests validate real canister behavior including transfers, burns, mints, transaction windows, and more.
