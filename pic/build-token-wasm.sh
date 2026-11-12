@@ -46,6 +46,12 @@ ALL=(
   # pic/install_refusal.test.ts).
   "token_pre_refusal:@baseline 5ff1d78 token_pre_refusal"
   "token_mixin_pre_refusal:@baseline 5ff1d78 token_mixin_pre_refusal src/token-mixin.mo"
+  # The ledger BEFORE the ICRC-106 index principal was stored as #Text: its
+  # setter stored #Blob, so the metadata of a ledger set by it holds a #Blob
+  # that only get_icrc106_index_principal's #Blob case still reads
+  # (pic/icrc106_blob_upgrade.test.ts). d894507 already has the 3.x lock and
+  # icrc3-mo 0.4.4: built with the repo's mops (4th word), no icrc3 patch.
+  "token_pre_text106:@baseline d894507 token_pre_text106 src/Token.mo mops"
 )
 
 MOC="$(mops toolchain bin moc)"

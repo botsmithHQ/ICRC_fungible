@@ -10,6 +10,8 @@
 #                   (pic/supply_lock.test.ts)
 #   token_pre_limit (f3d042e) BEFORE the archive controller limit was
 #                   checked at install (pic/archive_upgrade_results.test.ts)
+#   token_pre_text106 (d894507) BEFORE the ICRC-106 index principal was stored
+#                   as #Text: its setter stored #Blob (pic/icrc106_blob_upgrade.test.ts)
 #
 # It checks out the ref into a throwaway git worktree, resolves that tree's
 # own dependencies (with a 2.x mops CLI, MOPS2), compiles its src/Token.mo (or [main]) with the same flags as
@@ -17,8 +19,12 @@
 #   .dfx/local/canisters/<name>/<name>.wasm.gz
 # The throwaway worktree is removed on exit.
 #
-# Usage: bash pic/build-baseline-wasm.sh [ref] [name] [main]
-#        (defaults: BASELINE_REF below, token_baseline)
+# Usage: bash pic/build-baseline-wasm.sh [ref] [name] [main] [cli]
+#        (defaults: BASELINE_REF below, token_baseline, src/Token.mo, mops2)
+#        cli = mops2: the ref has a 2.x mops.lock and icrc3-mo 0.4.3 (built with
+#        MOPS2, icrc3 patched to 0.4.4, see below). cli = mops: the ref already
+#        has a 3.x lock and icrc3-mo 0.4.4 (built with the repo's own mops, no
+#        patch).
 # pic/build-token-wasm.sh runs it for each of those targets.
 set -euo pipefail
 
@@ -26,6 +32,7 @@ set -euo pipefail
 BASELINE_REF="${1:-5fb6104}"
 NAME="${2:-token_baseline}"
 MAIN="${3:-src/Token.mo}"
+CLI_KIND="${4:-mops2}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -47,10 +54,23 @@ fi
 # the baseline would no longer be the ledger as it was built at that ref. The
 # throwaway worktree is installed and built with MOPS2, a 2.x CLI: CI points it
 # at ic-mops@$MOPS2_CLI_VERSION; otherwise `mops` on PATH must be one.
-MOPS2="${MOPS2:-mops}"
-case "$("$MOPS2" --version 2>/dev/null)" in
-  "CLI 2."*) ;;
-  *) echo "MOPS2 ($MOPS2) is not a 2.x mops CLI; the baseline refs have 2.x mops.lock files" >&2; exit 1 ;;
+case "$CLI_KIND" in
+  mops2)
+    MOPS2="${MOPS2:-mops}"
+    case "$("$MOPS2" --version 2>/dev/null)" in
+      "CLI 2."*) ;;
+      *) echo "MOPS2 ($MOPS2) is not a 2.x mops CLI; the baseline refs have 2.x mops.lock files" >&2; exit 1 ;;
+    esac
+    ;;
+  mops)
+    # A ref from after the 3.x adoption: its lock was written by the repo's CLI.
+    MOPS2=mops
+    case "$("$MOPS2" --version 2>/dev/null)" in
+      "CLI 3."*) ;;
+      *) echo "mops on PATH is not a 3.x mops CLI (cli = mops)" >&2; exit 1 ;;
+    esac
+    ;;
+  *) echo "unknown cli '$CLI_KIND' (mops2 | mops)" >&2; exit 1 ;;
 esac
 # --- icrc3-mo 0.4.3 -> 0.4.4 in the baseline (TEMPORARY, see vendor/README.md) ---
 # icrc3-mo 0.4.4 changed the stored type of its v0_1_0 migration state. A ledger
@@ -72,7 +92,7 @@ ICRC3_DELTA_FILES=(
 ICRC3_HEAD="$ROOT/vendor/icrc3-mo"
 # map and vector as HEAD resolves them (HEAD's mops install must have run).
 ICRC3_EXTRA_SOURCES=""
-for pkg in map vector; do
+for pkg in $([ "$CLI_KIND" = mops2 ] && echo map vector); do
   src="$(cd "$ROOT" && mops sources | awk -v p="$pkg" '$1 == "--package" && $2 == p { print $3 }')"
   if [ -z "$src" ] || [ ! -d "$ROOT/$src" ]; then
     echo "icrc3 delta: HEAD does not resolve '$pkg' (run mops install at the repo root)" >&2
@@ -142,7 +162,9 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
     echo "icrc3 delta: baseline $BASELINE_REF does not resolve icrc3-mo" >&2
     exit 1
   fi
-  patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
+  if [ "$CLI_KIND" = mops2 ]; then
+    patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
+  fi
   SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
   # shellcheck disable=SC2086
