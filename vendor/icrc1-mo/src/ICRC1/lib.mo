@@ -1379,8 +1379,6 @@ module {
           if (item.0 == "icrc106:index_principal") {
             switch (item.1) {
               case (#Text(t)) return #Ok(Principal.fromText(t));
-              // Stored by a build before the LOCAL PATCH above.
-              case (#Blob(b)) return #Ok(Principal.fromBlob(b));
               case (_) {};
             };
           };
