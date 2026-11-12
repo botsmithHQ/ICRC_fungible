@@ -12,7 +12,7 @@
     "@dfinity/pic": "^0.18.0",
     "@icp-sdk/core": "^5.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@dfinity/identity": "^3.4.3"
