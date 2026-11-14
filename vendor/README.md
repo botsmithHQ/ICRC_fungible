@@ -321,13 +321,13 @@ runs after the upgrade).
 ## `icrc2-mo` — fork of 0.2.1
 
 Copied unpatched from the registry first (its own commit; every file matches its
-`mops.lock` hash), so the patch below reads as its own diff. No other dependency
+`mops.lock` hash), so each patch below reads as its own diff. No other dependency
 imports `icrc2-mo`, so there is one copy: `mops sources | grep icrc2-mo` must
 print `vendor/icrc2-mo/src`. The fork's own `mops.toml` still names
 `icrc1-mo = "0.2.1"`; the root override resolves it to `vendor/icrc1-mo`.
 
-**Upstream**: https://github.com/icdevsorg/icrc2.mo — drop the patch once a
-release contains it, and the fork with it (back to `icrc2-mo = "<version>"`).
+**Upstream**: https://github.com/icdevsorg/icrc2.mo — drop a patch once a
+release contains it, and the fork once none is left (back to `icrc2-mo = "<version>"`).
 
 ### Patch: transfer_from mints respect max_supply
 
@@ -378,6 +378,35 @@ with `bash pic/build-token-wasm.sh`). Red against 0.2.1, green against this fork
 `icrc1_transfer` gives the same error and that `icrc4_transfer_batch` caps item
 by item (icrc4-mo is not affected and is not forked), and pins the known limit
 above (`icrc1_transfer` traps, minting nothing).
+
+### Patch: deduplication requires `created_at_time`
+
+**Where**: `src/ICRC2/lib.mo`, the duplicate lookup of `approve_transfers` and of
+`transfer_from` (`LOCAL PATCH (dedupe requires created_at_time)`).
+
+**Bug**: ICRC-1, "Transaction deduplication", which ICRC-2 inherits: "If the
+client did not set the `created_at_time` field, the ledger SHOULD NOT
+deduplicate the transaction." Upstream adds `ts` to the hashed transaction only
+when `created_at_time` is set, but calls `find_dupe` either way, so two identical
+`icrc2_approve` or `icrc2_transfer_from` calls without `created_at_time` within
+the transaction window got `Duplicate { duplicate_of = <first> }` on the second.
+icrc1-mo already skips the lookup for `icrc1_transfer` (`validate_request`, the
+`testCreatedAt` case).
+
+**Fix**: the lookup runs only when `created_at_time` is set. Like icrc1-mo, the
+ledger still records every transaction in `recent_transactions`; a record
+without `ts` is never found, since every lookup that runs carries `ts`.
+
+**Behaviour change**: a client that repeats an approve or a transfer_from
+without `created_at_time` gets a second block (and pays a second fee) where it
+used to get `Duplicate`. Calls with `created_at_time` are deduplicated as before.
+
+**Upstream**: not fixed as of v0.2.1 (`98613339`, the latest tag and the latest
+commit of https://github.com/icdevsorg/icrc2.mo when this patch was written).
+
+**Regression test**: `pic/icrc2_dedupe.test.ts`. Red against 0.2.1 (the two
+"without created_at_time, two identical …" cases get `Duplicate`), green against
+this fork; `TOKEN_WASM=<path>` points it at any build.
 
 ## `mops.lock` and the local-path forks (mops CLI 3.6.0)
 
