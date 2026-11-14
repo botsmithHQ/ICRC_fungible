@@ -132,6 +132,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`icrc2_approve` and `icrc2_transfer_from` deduplicate only with `created_at_time`**
+  (`vendor/icrc2-mo`). ICRC-1 "Transaction deduplication", inherited by ICRC-2: "If the client did
+  not set the `created_at_time` field, the ledger SHOULD NOT deduplicate the transaction."
+  Upstream 0.2.1 looked up the duplicate either way, so a second identical call without
+  `created_at_time` inside the transaction window got `Duplicate`. It now lands as its own block
+  (and pays its own fee), as `icrc1_transfer` already did. Calls with `created_at_time` are
+  deduplicated as before.
 - **The ICRC-106 index principal is stored as text** (`vendor/icrc1-mo`). ICRC-106 defines
   `icrc106:index_principal` in `icrc1_metadata` as the principal's textual form; it was a
   `#Blob` of the principal's bytes. `set_icrc106_index_principal` now stores `#Text`.

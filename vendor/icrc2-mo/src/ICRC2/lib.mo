@@ -1031,13 +1031,20 @@ module {
       //check for duplicate
       let pretrxhash = Blob.fromArray(RepIndy.hash_val(#Map(List.toArray(trx))));
 
-      debug if(debug_channel.approve) D.print("trying dedupe for " # debug_show(trx, pretrxhash));
+      // LOCAL PATCH (dedupe requires created_at_time): ICRC-1 "Transaction
+      // deduplication" — if the client did not set created_at_time, the ledger
+      // SHOULD NOT deduplicate. Only the lookup is skipped, as icrc1's
+      // validate_request does; the record below is still added, and a record
+      // without "ts" never matches a lookup, which always carries "ts".
+      if(approval.created_at_time != null){
+        debug if(debug_channel.approve) D.print("trying dedupe for " # debug_show(trx, pretrxhash));
 
-      switch(environment.icrc1.find_dupe(pretrxhash)){
-        case(?found){
-          return #trappable(#Err(#Duplicate({duplicate_of = found})));
+        switch(environment.icrc1.find_dupe(pretrxhash)){
+          case(?found){
+            return #trappable(#Err(#Duplicate({duplicate_of = found})));
+          };
+          case(null){};
         };
-        case(null){};
       };
 
       let txMap = #Map(List.toArray(trx));
@@ -2052,13 +2059,17 @@ module {
         //check for duplicate
         var pretrxhash = Blob.fromArray(RepIndy.hash_val(#Map(List.toArray(trx))));
 
-        debug if(debug_channel.approve) D.print("trying dedupe for " # debug_show(trx, pretrxhash));
+        // LOCAL PATCH (dedupe requires created_at_time): as in approve, no
+        // lookup without created_at_time (ICRC-1 "Transaction deduplication").
+        if(transferFromArgs.created_at_time != null){
+          debug if(debug_channel.approve) D.print("trying dedupe for " # debug_show(trx, pretrxhash));
 
-        switch(environment.icrc1.find_dupe(pretrxhash)){
-          case(?found){
-            return #trappable(#Err(#Duplicate({duplicate_of = found})));
+          switch(environment.icrc1.find_dupe(pretrxhash)){
+            case(?found){
+              return #trappable(#Err(#Duplicate({duplicate_of = found})));
+            };
+            case(null){};
           };
-          case(null){};
         };
 
          debug if(debug_channel.transfer) D.print("ready with a prenotification " # debug_show(preNotification));
