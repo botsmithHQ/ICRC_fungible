@@ -84,9 +84,13 @@ The effects:
    transfer that triggers the cleanup. It is already in the map and live when the
    walk starts (`:1148` runs before `:1155`).
 2. Expired entries stay in the map. When the live set is `L` entries spread
-   uniformly in hash space, one walk removes about `(N − L)/(L + 1)` entries. In
-   steady traffic almost nothing is removed. The map grows with the all-time
-   transfer count instead of the transfers inside the window.
+   uniformly in hash space, one walk removes about `(N − L)/(L + 1)` entries.
+   Under steady traffic (one insert per walk) that settles near `N ≈ 2L`, with
+   no bound the code enforces: T5 (48 transfers per window, 3 windows) breaks
+   `N ≤ 2L + SWEEP_MIN` first at step 113 (size 115, live 49). It grows when
+   more than one entry is added per walk (icrc2 adds two, an icrc4 batch `m`),
+   and after a quiet period the walk stops at the first new live entry (T6:
+   15 removed on the first call, then 0).
 
 Note what D2 does **not** do. A lingering expired entry never causes a false
 `#Duplicate`, because `find_dupe` checks the time. A re-send of that key is
@@ -150,7 +154,7 @@ LOCAL PATCH. It never breaks on a live entry.
 // LOCAL PATCH (recents sweep) — class-level, NOT stable: both reset on upgrade,
 // which is harmless (the sweep restarts from the smallest key).
 var sweepCursor : ?Blob = null;       // last key examined
-var sizeAfterSweep : Nat = 0;          // map size after the previous sweep
+var sizeAfterSweep : ?Nat = null;      // map size after the previous sweep (null: none yet)
 
 let SWEEP_MIN : Nat = 16;              // floor per call
 let SWEEP_PER_INSERT : Nat = 2;        // entries examined per entry added since last sweep
@@ -158,7 +162,7 @@ let SWEEP_PER_INSERT : Nat = 2;        // entries examined per entry added since
 public func cleanUpRecents() : () {
   let now = get_time64();
   let size = Map.size(state.recent_transactions);
-  let added = if (size > sizeAfterSweep) size - sizeAfterSweep else 0;
+  let added = switch (sizeAfterSweep) { case null 0; case (?s) if (size > s) size - s else 0 };
   var budget = Nat.min(size, SWEEP_MIN + SWEEP_PER_INSERT * added);
   let dead = List.empty<Blob>();
   var last : ?Blob = sweepCursor;
@@ -172,7 +176,7 @@ public func cleanUpRecents() : () {
     for ((k, v) in it) {
       if (budget == 0) break sweep;
       if (pass == 0 and ?k == sweepCursor) { /* entriesFrom is inclusive: skip */ }
-      else if (pass == 1 and Option.isSome(sweepCursor) and Blob.compare(k, Option.unwrap(sweepCursor)) != #less) break sweep; // lap closed
+      else if (pass == 1 and Option.isSome(sweepCursor) and Blob.compare(k, Option.unwrap(sweepCursor)) == #greater) break sweep; // lap closed, cursor key included
       else {
         budget -= 1;
         last := ?k;
@@ -183,9 +187,20 @@ public func cleanUpRecents() : () {
   };
   for (k in List.values(dead)) ignore Map.take(state.recent_transactions, Blob.compare, k);
   sweepCursor := last;
-  sizeAfterSweep := Map.size(state.recent_transactions);
+  sizeAfterSweep := ?Map.size(state.recent_transactions);
 };
 ```
+
+Two corrections were made at apply time (approved before coding):
+
+- **(a) the size counter starts unset.** With `sizeAfterSweep = 0`, the first
+  call after an upgrade counts the whole map as "added" and walks all of it in
+  one transfer: `O(N)` over the backlog §6 says no single message processes.
+  With `null`, nothing counts as added and the first budget is `SWEEP_MIN`.
+  Counterproof CP-a.
+- **(b) the wrap-around pass includes the cursor key.** Breaking at
+  `k ≥ cursor` never examines the cursor key in the lap; when it is the only
+  entry left, it stays forever. Counterproof CP-b.
 
 (The sketch shows the shape. The apply writes it with the repo's style and with
 `mo:core` APIs confirmed: `Map.entriesFrom` exists in `core@2.1.0`
@@ -292,10 +307,12 @@ A test must never go green by luck.
 |---|---|---|---|---|
 | T1 | `recents_horizon.test.ts` «a re-send after insertion + window, before #TooOld, is #Duplicate when the cleanup ran first». Pay `req` (C = now), advance window + 10 s, nudge, advance 20 s, re-send. Pin `hash(req) < hash(nudge)`. | Token | `Ok` (paid twice) — D1 cleanup side | `Duplicate` |
 | T2 | same file, «a key dated +drift is #Duplicate up to insertion + window + 2·drift». C = now + drift, advance window + 1.5·drift, re-send, no nudge. | Token | `Ok` — D1 `find_dupe` side, independent of hash order | `Duplicate` |
-| T3 | same file, «the boundary»: re-send at `C + window + drift` + 1 ns is `#TooOld`. | Token | green (guard against overshooting) | green |
+| T3a | same file, «the boundary»: re-send at `C + window + drift` + 1 ns is `#TooOld`. | Token | green (guard against overshooting) | green |
+| T3b | same file: re-send exactly at `C + window + drift` (= insertion + window + 2·drift, C = insertion + drift) is `#Duplicate`. | Token | `Ok` — D1 `find_dupe` side | `Duplicate` |
 | T4 | `recents_sweep.test.ts` «expired entries that hash after a live one are swept». Seed 12 keyed transfers, advance window + 2·drift + 1 s, nudge. Pin: at least one seed hash > hash(nudge). Then `recents_size()`. | RecentsProbe | `> 1` — D2 | `== 1` (the nudge) |
-| T5 | same file, «the map stays ≤ 2·live + SWEEP_MIN under steady traffic». 3 windows of traffic at a fixed rate, sample `recents_size()` each step. | RecentsProbe | grows without bound — D2 | bound holds |
+| T5 | same file, «the map stays ≤ 2·live + SWEEP_MIN under steady traffic». 3 windows of traffic at a fixed rate, sample `recents_size()` each step. | RecentsProbe | settles near 2L; the bound breaks first at step 113 (size 115, live 49) — D2 | bound holds |
 | T6 | same file, «a quiet period drains». 200 entries, jump 2 windows, k transfers, size falls by ≥ 16 per call until it reaches the live set. | RecentsProbe | does not drain | drains |
+| T10 | `recents_sweep.test.ts` «the cursor key is swept when it is the only expired entry» | RecentsProbe | green | green (red under CP-b) |
 | T7 | `recents_parity.test.ts` — **parity with the downstream contrast scenario**, timings verbatim (pay; +23 h re-send; +24 h 10 s nudge; +24 h 30 s re-send; +24 h 61 s re-send), both hash sides pinned (`hash(req)` before / after `hash(nudge)`). | Token | side −1: `["Ok","Duplicate","Ok","TooOld"]` (downstream case 1, paid twice) | **both sides**: `["Ok","Duplicate","Duplicate","TooOld"]`, recipient paid once |
 | T8 | `dedup_cleanup.test.ts` (existing) — the delete-while-iterating regression | Token | — | still green |
 | T9 | `icrc2_dedupe.test.ts` (existing) — icrc2 lookups through `find_dupe` | Token | — | still green |
@@ -417,7 +434,9 @@ recorded literal is the vitest assertion text.
 | CP2 | `recentIsLive` uses `window` only (the old cleanup bound) | T1, T7 side −1 | T7: `expected [ 'Ok', …, 'Ok', … ] to deeply equal [ 'Ok', …, 'Duplicate(+0)', … ]` |
 | CP3 | restore `break` at the first live entry in the sweep | T4 | `expected <n > 1> to be 1` (recents_size) |
 | CP4 | `SWEEP_PER_INSERT = 0`, `SWEEP_MIN = 0` (sweep disabled) | T4, T5, T6 red; **T1, T2, T7 stay green** | proves dedup correctness does not depend on the sweep (§2) |
-| CP5 | `recentIsLive` uses `>` instead of `>=` | T3 boundary, the other side (re-send exactly at the horizon) | `expected 'Ok' to deeply equal 'Duplicate(+0)'` |
+| CP5 | `recentIsLive` uses `>` instead of `>=` | T3b (re-send exactly at the horizon) | `expected 'Ok' to deeply equal 'Duplicate(+0)'` |
+| CP-a | `sizeAfterSweep` starts at `?0` | U1 probe, first call after the upgrade | `expected 34 to be less than or equal to 16` |
+| CP-b | wrap-around pass breaks at `k ≥ cursor` | T10 (and T4) | `expected 1n to deeply equal 0n` |
 | CP-85 | (existing script) kill switches flipped on | `icrc85_off*.test.ts` | `bash pic/icrc85-counterproof.sh` exit 0 |
 | CP-M | none: measurement. `ExperimentalInternetComputer.countInstructions` around `cleanUpRecents` in RecentsProbe at N = 10³, 10⁴, 10⁵ | — | fills the §4 table with measured numbers |
 

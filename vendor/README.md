@@ -51,6 +51,35 @@ points it at any build.
 **Upstream**: https://github.com/icdevsorg/icrc1.mo — remove this fork once a
 release contains the fix.
 
+### Patch: recents horizon + bounded sweep
+
+**Patch**: `src/ICRC1/lib.mo` → `recentIsLive` (new), `find_dupe`,
+`cleanUpRecents` (`LOCAL PATCH (recents horizon)`, `LOCAL PATCH (recents sweep)`).
+Design: `docs/design/icrc1-recents-cleanup.md`.
+
+A re-send of a keyed transfer has the same `created_at_time` C, so the same
+hash, and passes `is_too_old` while `now <= C + window + drift`; at insertion
+`is_in_future` allowed `C <= inserted_at + drift`. So an entry must answer
+`#Duplicate` up to `inserted_at + window + 2·drift`. Upstream deleted it at
+`inserted_at + window` and `find_dupe` stopped at `+ window + drift`: a re-send
+inside the gap executed as a new transfer. Both now use one predicate,
+`recentIsLive`, computed in `Nat` with no subtraction.
+
+Upstream's walk also stopped at the first live entry, but the map is in hash
+order, not insertion order, so an expired entry that sorts after a live one
+stayed (and whether the gap above opened depended on that order). The cleanup
+is now a bounded sweep: from a cursor, `SWEEP_MIN + SWEEP_PER_INSERT · added`
+entries per call (16 + 2 per entry added since the previous call, by any
+writer), wrapping around, never stopping at a live entry, the cursor key
+included once per lap. The cursor and the size counter are fields of the
+class instance: they reset on upgrade, and the first call after a start
+examines `SWEEP_MIN` entries. The stable state does not change.
+
+**Regression tests**: `pic/recents_horizon.test.ts` (T1, T2, T3b),
+`pic/recents_parity.test.ts` (T7), `pic/recents_sweep.test.ts` (T4, T5, T6,
+T10), `pic/recents_upgrade.test.ts` (U1, from 091b5e3). T4–T6, T10 and U1's
+drain read the index size through the pic-only harness `pic/RecentsProbe.mo`.
+
 ### Patch: the ICRC-106 index principal is text
 
 **Patch**: `src/ICRC1/lib.mo` → `get_icrc106_index_principal`,
