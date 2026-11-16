@@ -110,7 +110,15 @@ describe('U1 recents across the upgrade from 091b5e34', () => {
           let size = await l.recentsSize();
           for (let c = 1; c <= DRAIN_CALLS; c++) {
             okIndex(await l.send({ to: carol, amount: 400_000n + BigInt(c) }), `drain call ${c}`);
-            size = await l.recentsSize();
+            const next = await l.recentsSize();
+            if (c === 1) {
+              // The sweep's counter starts unset after the upgrade: the first
+              // call examines SWEEP_MIN entries, not the whole backlog (which a
+              // counter starting at 0 would count as "added" in one call).
+              expect(Number(size) + 1 - Number(next), 'first call after the upgrade removes ≤ SWEEP_MIN')
+                .toBeLessThanOrEqual(SWEEP_MIN);
+            }
+            size = next;
           }
           expect(SWEEP_MIN + (DRAIN_CALLS - 1) * (SWEEP_MIN + SWEEP_PER_INSERT), 'the calls cover a lap')
             .toBeGreaterThan(Number(sizeBefore) + DRAIN_CALLS);

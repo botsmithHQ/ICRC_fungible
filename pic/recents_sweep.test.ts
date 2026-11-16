@@ -96,6 +96,16 @@ describe('recents sweep (RecentsProbe wasm)', () => {
     });
   }, 300_000);
 
+  it('T10: the cursor key is swept when it is the only expired entry', async () => {
+    await withProbe(async (l) => {
+      // The mint's own cleanup examined its entry, so the mint key is the
+      // sweep cursor. Once it expires, it is the only entry, and the cursor.
+      await l.advance(HORIZON + 1n * S);
+      await l.measureCleanup();
+      expect(await l.recentsSize()).toEqual(0n);
+    });
+  }, 120_000);
+
   it('T6: a quiet period drains, at least SWEEP_MIN per call, down to the live set', async () => {
     await withProbe(async (l) => {
       const alice = l.alice.getPrincipal();
