@@ -1715,7 +1715,9 @@ module {
     public func find_dupe(trxhash: Blob) : ?Nat {
       switch(Map.get<Blob, (Nat64,Nat)>(state.recent_transactions, Blob.compare, trxhash)){
           case(?found){
-            if(found.0 + state.permitted_drift + state.transaction_window > get_time64()){
+            //LOCAL PATCH (recents horizon, see vendor/README.md): same predicate
+            //as the sweep in `cleanUpRecents`.
+            if(recentIsLive(found.0, get_time64())){
               return ?found.1;
             };
           };
@@ -1748,29 +1750,96 @@ module {
         #ok();
     };
 
+    //LOCAL PATCH (recents horizon, see vendor/README.md): an entry inserted at
+    //`inserted_at` must answer #Duplicate for as long as a re-send of the same
+    //hash can pass `is_too_old`. A re-send has the same created_at_time C, and
+    //C <= inserted_at + drift (`is_in_future` at insertion). It passes
+    //`is_too_old` while now <= C + window + drift. Hence the horizon is
+    //inserted_at + window + 2 * drift. The sum is computed in Nat, with no
+    //subtraction, so a window raised by an admin cannot trap on Nat64 overflow.
+    func recentIsLive(inserted_at : Nat64, now : Nat64) : Bool {
+      Nat64.toNat(inserted_at) + Nat64.toNat(state.transaction_window)
+        + 2 * Nat64.toNat(state.permitted_drift) >= Nat64.toNat(now)
+    };
+
+    //LOCAL PATCH (recents sweep, see vendor/README.md): where the bounded sweep
+    //resumes, and the map size it left. Fields of this class instance, which is
+    //rebuilt from the stable state on every start, so they reset on upgrade:
+    //the sweep restarts at the smallest key, and the first call after a start
+    //examines SWEEP_MIN entries (`sizeAfterSweep = null` counts nothing as added).
+    var sweepCursor : ?Blob = null;
+    var sizeAfterSweep : ?Nat = null;
+    //Entries examined per call: a floor, plus this many per entry added since the
+    //previous call (by any writer: icrc1, icrc2, icrc4 all add to the same map).
+    let SWEEP_MIN : Nat = 16;
+    let SWEEP_PER_INSERT : Nat = 2;
+
     /// `cleanUpRecents`
     ///
-    /// Iterates through and removes transactions from the 'recent transactions' index that are no longer within the permitted drift.
+    /// Removes the entries of the 'recent transactions' index that can no longer answer #Duplicate.
     public func cleanUpRecents() : (){
-      //LOCAL PATCH (see vendor/README.md): collect keys to delete first to avoid modifying the
-      //map while iterating it. Deleting during `Map.entries` corrupts mo:core's
-      //B-tree iterator and traps with a Natural subtraction underflow in
-      //core/src/Map.mo, which rolls back the whole transfer that triggered the
-      //cleanup. Same shape icrc2-mo already uses in `cleanUpApprovals`.
+      //LOCAL PATCH (recents sweep, see vendor/README.md). The map is keyed by
+      //transaction HASH, so walking it from the start and stopping at the first
+      //live entry (upstream) left every expired entry that sorts after a live
+      //one. This walks a bounded budget of entries from a cursor, wrapping
+      //around, and never stops at a live entry. A full lap over N entries takes
+      //at most N / SWEEP_PER_INSERT inserts, so the map stays within about twice
+      //its live entries. Whether an entry is a duplicate depends only on
+      //`recentIsLive`: the sweep is memory management.
+      //Keys are collected first and deleted after the walk: deleting during
+      //`Map.entries` corrupts mo:core's B-tree iterator and traps with a Natural
+      //subtraction underflow in core/src/Map.mo, which rolls back the whole
+      //transfer that triggered the cleanup. Same shape icrc2-mo already uses in
+      //`cleanUpApprovals`.
       let now = get_time64();
+      let recents = state.recent_transactions;
+      let size = Map.size(recents);
+      let added : Nat = switch(sizeAfterSweep){
+        case(null) 0;
+        case(?before) if(size > before) size - before else 0;
+      };
+      var budget = Nat.min(size, SWEEP_MIN + SWEEP_PER_INSERT * added);
       let expired = List.empty<Blob>();
-      label clean for(thisItem in Map.entries(state.recent_transactions)){
-        if(thisItem.1.0 + state.transaction_window < now){
-          //we can remove this item;
-          List.add(expired, thisItem.0);
-        } else {
-          //items are inserted in order in this map so as soon as we hit a still valid item, the rest of the list should still be valid as well
-          break clean;
+      var last : ?Blob = sweepCursor;
+
+      //from the cursor (exclusive) to the end; the whole map when there is no cursor
+      let tail = switch(sweepCursor){
+        case(null) Map.entries(recents);
+        case(?c) Map.entriesFrom(recents, Blob.compare, c);
+      };
+      label tailPass for((k, v) in tail){
+        if(budget == 0) break tailPass;
+        let isCursor = switch(sweepCursor){
+          case(?c) Blob.equal(k, c);
+          case(null) false;
+        };
+        if(not isCursor){
+          budget -= 1;
+          last := ?k;
+          if(not recentIsLive(v.0, now)) List.add(expired, k);
         };
       };
-      for(k in List.values(expired)){
-        ignore Map.take(state.recent_transactions, Blob.compare, k);
+
+      //wrap around: from the start up to the cursor INCLUSIVE, so the cursor
+      //key itself is examined once per lap (it may be the only entry left)
+      switch(sweepCursor){
+        case(null){};
+        case(?c){
+          label headPass for((k, v) in Map.entries(recents)){
+            if(budget == 0) break headPass;
+            if(Blob.compare(k, c) == #greater) break headPass;
+            budget -= 1;
+            last := ?k;
+            if(not recentIsLive(v.0, now)) List.add(expired, k);
+          };
+        };
       };
+
+      for(k in List.values(expired)){
+        ignore Map.take(recents, Blob.compare, k);
+      };
+      sweepCursor := last;
+      sizeAfterSweep := ?Map.size(recents);
     };
 
      /// `checkAccounts`
