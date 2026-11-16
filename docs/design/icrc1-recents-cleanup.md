@@ -493,11 +493,11 @@ Risks:
   examines `16 + 2·added` entries in one message. The worst case measured in
   §4 (C: every examined entry dead and removed, ~3·10⁴ instructions each)
   reaches 10 % of the 40·10⁹ update limit at ~1.3·10⁵ entries removed in
-  one call. That needs ~6.5·10⁴ entries added since the previous cleanup. With
-  Token.mo's defaults (`max_transfers = 200`, and `BATCH_ARG_CEILING` of 1 MiB,
-  about 4.5·10³ transfers at the most for any configured limit) that is at
-  least ~15 full-size batches with no icrc1 transfer or `transfer_from` in
-  between. An admin who raises `max_transfers` should keep this in mind.
+  one call. That needs ~6.5·10⁴ entries added since the previous cleanup,
+  with no icrc1 transfer or `transfer_from` in between: ~325 batches at
+  Token.mo's default `max_transfers = 200`, and never fewer than ~15, because
+  `BATCH_ARG_CEILING` (1 MiB) caps any batch at about 4.5·10³ transfers. An
+  admin who raises `max_transfers` should keep this in mind.
 
 Questions for the owner:
 
