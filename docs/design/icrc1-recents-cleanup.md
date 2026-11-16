@@ -1,6 +1,8 @@
 # Design — icrc1 recents cleanup (drift + hash-order early break)
 
-Status: design only. Nothing in this document has been built or run.
+Status: implemented in `vendor/icrc1-mo` (fix commit `009555d`). The §5 tests
+ran red on the tests-only commit `d6a5f11`, exactly as listed. The green run,
+the §10 counterproofs and the §4 CP-M measurements are pending.
 Scope: `vendor/icrc1-mo` (local fork of icrc1-mo 0.2.1). No other package changes.
 
 All line numbers refer to `main @ 091b5e34`.
