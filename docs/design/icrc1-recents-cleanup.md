@@ -1,8 +1,9 @@
 # Design — icrc1 recents cleanup (drift + hash-order early break)
 
 Status: implemented in `vendor/icrc1-mo` (fix commit `009555d`). The §5 tests
-ran red on the tests-only commit `d6a5f11`, exactly as listed. The green run,
-the §10 counterproofs and the §4 CP-M measurements are pending.
+ran red on the tests-only commit `d6a5f11`, exactly as listed, and green on the
+fix. The §10 counterproofs CP1–CP5, CP-a and CP-b each went red where listed,
+and CP-M measured the §4 table. CP-85 is pending.
 Scope: `vendor/icrc1-mo` (local fork of icrc1-mo 0.2.1). No other package changes.
 
 All line numbers refer to `main @ 091b5e34`.
@@ -259,10 +260,11 @@ Rejected because:
 `O(N)` per transfer forever. Total cost is quadratic in traffic. The
 instruction cost of a single transfer grows with the window's volume.
 
-## 4. Cost (c) — estimates, to be measured (CP-M)
+## 4. Cost (c) — estimates, and the CP-M measurement
 
-These are order-of-magnitude figures from the data-structure shapes. They have
-**not** been measured. The measurement is CP-M in §10 and runs only with an explicit go-ahead.
+The memory figures are order-of-magnitude estimates from the data-structure
+shapes. The instruction figures were measured by CP-M (§10); the measured table
+is at the end of this section.
 
 Per entry, in the main heap (64-bit enhanced orthogonal persistence): a 32-byte
 `Blob` key plus its header, a boxed `(Nat64, Nat)` tuple, and a B-tree slot.
@@ -283,6 +285,26 @@ and at most about 18 deletions, so **~10⁵ instructions, independent of `N`**.
 For an icrc4 batch of `m` transfers the budget is `16 + 2m`, which is linear in
 the batch and already paid per item by the batch itself. Today's cost is also
 bounded per call, but only because of the break that causes D2.
+
+**Measured (CP-M).** One `cleanUpRecents` call, counted with
+`countInstructions` in RecentsProbe (moc 1.3.0, PocketIC, fix `009555d`), with
+`N` synthetic entries in the index. The update-message limit is 40·10⁹
+instructions.
+
+| Case | N = 10³ | N = 10⁴ | N = 10⁵ | Worst share of the limit |
+|---|---|---|---|---|
+| B: steady state, `added = 0`, examines `SWEEP_MIN` live entries | 174 251 | 175 409 | 180 118 | 0.0005 % |
+| D: drain step, `added = 0`, removes `SWEEP_MIN` dead entries | 410 405 | 425 106 | 476 009 | 0.0012 % |
+| A: one call walks all `N`, all live (`added = N`) | 9 455 579 | 94 304 066 | 942 246 105 | 2.4 % |
+| C: one call walks and removes all `N`, all dead (`added = N`) | 23 305 449 | 268 548 681 | 2 979 980 368 | 7.5 % |
+
+B and D are what a transfer pays. They grow only with the B-tree depth, and stay
+within a few times the 10⁵ estimate above. A and C need `N` entries added
+since the previous call, which only a seed (or a batch of `N/2` icrc4
+transfers) produces. They are linear in `N`: about 9.4·10³ instructions per
+live entry examined and about 3·10⁴ per dead entry removed. A single call
+reaches 10 % of the limit (4·10⁹) at about 1.3·10⁵ dead entries added in one
+message.
 
 ## 5. Tests in B (d)
 
