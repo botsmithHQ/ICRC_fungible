@@ -12,6 +12,9 @@
 #                   checked at install (pic/archive_upgrade_results.test.ts)
 #   token_pre_text106 (d894507) BEFORE the ICRC-106 index principal was stored
 #                   as #Text: its setter stored #Blob (pic/icrc106_blob_upgrade.test.ts)
+#   token_recents_base, recents_probe_base (091b5e3) BEFORE the recents horizon
+#                   + bounded sweep (pic/recents_upgrade.test.ts); the probe is
+#                   main = head:pic/RecentsProbe.mo (see below)
 #
 # It checks out the ref into a throwaway git worktree, resolves that tree's
 # own dependencies (with a 2.x mops CLI, MOPS2), compiles its src/Token.mo (or [main]) with the same flags as
@@ -165,6 +168,21 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
   if [ "$CLI_KIND" = mops2 ]; then
     patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
   fi
+  # [main] = head:<path>: a file of THIS tree (a test harness the ref does not
+  # have), copied into the throwaway worktree and compiled against the ref's
+  # libraries. It must not exist at the ref, so nothing of the ref is replaced.
+  # Copied after the icrc3 delta, whose check refuses any other change in the tree.
+  case "$MAIN" in
+    head:*)
+      MAIN="${MAIN#head:}"
+      if [ -e "$MAIN" ]; then
+        echo "head:$MAIN already exists at $BASELINE_REF; refusing to replace it" >&2
+        exit 1
+      fi
+      mkdir -p "$(dirname "$MAIN")"
+      cp "$ROOT/$MAIN" "$MAIN"
+      ;;
+  esac
   SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
   # shellcheck disable=SC2086

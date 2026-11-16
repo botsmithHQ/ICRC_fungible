@@ -52,6 +52,14 @@ ALL=(
   # (pic/icrc106_blob_upgrade.test.ts). d894507 already has the 3.x lock and
   # icrc3-mo 0.4.4: built with the repo's mops (4th word), no icrc3 patch.
   "token_pre_text106:@baseline d894507 token_pre_text106 src/Token.mo mops"
+  # Not in dfx.json: the pic-only harness of the dedup index tests
+  # (pic/recents_sweep.test.ts, pic/recents_upgrade.test.ts).
+  "recents_probe:pic/RecentsProbe.mo"
+  # The ledger, and that harness, BEFORE the recents horizon + bounded sweep
+  # (pic/recents_upgrade.test.ts). The probe does not exist at that commit:
+  # `head:` compiles this tree's file against that commit's libraries.
+  "token_recents_base:@baseline 091b5e3 token_recents_base src/Token.mo mops"
+  "recents_probe_base:@baseline 091b5e3 recents_probe_base head:pic/RecentsProbe.mo mops"
 )
 
 MOC="$(mops toolchain bin moc)"
