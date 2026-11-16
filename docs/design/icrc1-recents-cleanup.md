@@ -3,7 +3,8 @@
 Status: implemented in `vendor/icrc1-mo` (fix commit `009555d`). The §5 tests
 ran red on the tests-only commit `d6a5f11`, exactly as listed, and green on the
 fix. The §10 counterproofs CP1–CP5, CP-a and CP-b each went red where listed,
-and CP-M measured the §4 table. CP-85 is pending.
+and CP-M measured the §4 table. CP-85 is the `icrc85-counterproof` check of
+the pull request's CI.
 Scope: `vendor/icrc1-mo` (local fork of icrc1-mo 0.2.1). No other package changes.
 
 All line numbers refer to `main @ 091b5e34`.
@@ -486,6 +487,17 @@ Risks:
   real Token wasm.
 - **R5 — downstream tests that pin the old gap** (§9.4) turn red on purpose
   at the pin bump.
+- **R6 — many entries added between two cleanups.** icrc4 batches write their
+  entries into the index without a cleanup of their own. The next cleanup
+  (an icrc1 transfer, or icrc2 `transfer_from`) counts them all as added, and
+  examines `16 + 2·added` entries in one message. The worst case measured in
+  §4 (C: every examined entry dead and removed, ~3·10⁴ instructions each)
+  reaches 10 % of the 40·10⁹ update limit at ~1.3·10⁵ entries removed in
+  one call. That needs ~6.5·10⁴ entries added since the previous cleanup. With
+  Token.mo's defaults (`max_transfers = 200`, and `BATCH_ARG_CEILING` of 1 MiB,
+  about 4.5·10³ transfers at the most for any configured limit) that is at
+  least ~15 full-size batches with no icrc1 transfer or `transfer_from` in
+  between. An admin who raises `max_transfers` should keep this in mind.
 
 Questions for the owner:
 
