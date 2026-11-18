@@ -437,6 +437,69 @@ commit of https://github.com/icdevsorg/icrc2.mo when this patch was written).
 "without created_at_time, two identical …" cases get `Duplicate`), green against
 this fork; `TOKEN_WASM=<path>` points it at any build.
 
+## `timer-tool` — registry 0.2.2 (was 0.2.1), not forked
+
+Not a fork: the root `mops.toml` and the two forks that depend on it
+(`vendor/icrc1-mo`, `vendor/icrc3-mo`) pin the registry's `timer-tool = "0.2.2"`,
+and `mops sources | grep timer-tool` prints `.mops/timer-tool@0.2.2/src`. It is
+here because the bump breaks upgrades in place, like icrc3-mo 0.4.4 above.
+
+### 0.2.2 adopted in pre-production (2026-11-18)
+
+**Why**: stay on the current upstream release. 0.2.2 restores the 0.1.x state
+type so canisters holding a 0.1.x timer-tool state can upgrade to 0.2.x. It was
+taken in pre-production, while no ledger built on this library holds state that
+has to be kept.
+
+**What changes**: the registry's 0.2.1 → 0.2.2 delta, nothing local:
+
+- `src/migrations/v000_001_000/types.mo` and `lib.mo`: the v0_1_0 state goes
+  back to its 0.1.x shape (`stableheapbtreemap` BTree, `mo:map`);
+- `src/migrations/v000_002_000/` (new): v0_2_0 holds the mo:core layout, the
+  type that v0_1_0 had in 0.2.1 (its `types.mo` is byte for byte 0.2.1's
+  `v000_001_000/types.mo`), and the v0_1_0 → v0_2_0 migration converts;
+- `mops.toml`: version 0.2.2, plus `map = "9.0.1"` and
+  `stableheapbtreemap = "1.5.0"`.
+
+No new ICRC-85 stream: `ovs.mo`, `openvaluesharing.mo`, `collector.mo` and
+`TimerToolMixin.mo` are the same as in 0.2.1, and the kill switches in
+`src/Token.mo` are untouched.
+
+**What it breaks**: Motoko checks upgrade compatibility on the whole stored type
+`#v0_0_0 | #v0_1_0 | #v0_2_0`, not on the variant actually stored. Changing
+`#v0_1_0` makes a 0.2.2 build incompatible with **every** canister built with
+timer-tool 0.2.0–0.2.1: the upgrade is refused with
+`RTS error: Memory-incompatible program upgrade` (M0170). Unlike icrc3-mo
+0.4.4, this reaches:
+
+- the ledger: `tt_state`, and the `icrc1`/`icrc3` migration states, which embed
+  `org_icdevs_timer_tool : ?TT.State` (null in practice; the type is what counts);
+- **archives**: `vendor/icrc3-mo/src/archive/lib.mo` keeps
+  `org_icdevs_timer_tool_state : TT.State` as a stable variable, so
+  `upgradeArchive` from a 0.2.0–0.2.1 archive is refused the same way;
+- `src/token-mixin.mo`: its `org_icdevs_timer_tool_state` lives in the
+  consumer's actor.
+
+A ledger or archive built with timer-tool 0.2.0–0.2.1 has to be
+**reinstalled**, not upgraded. There is no in-source migration: it would type
+its input as the 0.2.1 state, and then refuse every canister already on 0.2.2.
+
+**`postupgrade`**: `src/Token.mo` and `src/token-mixin.mo` reset TimerTool's
+`nextTimer` after an upgrade. With 0.2.2 the state is `#v0_2_0`; an arm on
+`#v0_1_0` alone never matches it and the reset is lost, so both arms are there.
+`pic/timertool_upgrade.test.ts` ("after an upgrade, the first push does not
+cancel the archive timer") is red without the `#v0_2_0` arm when the re-arm in
+`postupgrade` is removed, and green with it.
+
+**Baseline wasms of the pic suite**: every ref of `pic/build-baseline-wasm.sh`
+predates 0.2.2. Each baseline's timer-tool must be exactly 0.2.1 (a tree hash of
+the package); it is replaced by HEAD's whole 0.2.2 package, plus
+`stableheapbtreemap` (and `map` when the ref does not bring it), so those tests
+keep upgrading a ledger in place. Drop that block once every baseline ref
+already has 0.2.2. `pic/timertool_022_break.test.ts` keeps the break itself
+under test: a ledger built just before the bump (41fd7aa^, unpatched) must be
+refused by HEAD.
+
 ## `mops.lock` and the local-path forks (mops CLI 3.6.0)
 
 `mops.lock` is written by the mops CLI in `MOPS_CLI_VERSION`
