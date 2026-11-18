@@ -1,7 +1,7 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "6171888b4a15dd1658c8056e1b246bff996a41d49b7a90f1c3adf005e977cee3",
-  "localDepsHash": "4a09cdd2724fc91d72361869aa6c73104bcee8224b474abf26679b39bcf93ad3",
+  "mopsTomlDepsHash": "7df71773d2730a0f929bc695e13df5c239f28e753cc303592c1d336d6c8266f7",
+  "localDepsHash": "8c21283a7223e5e6d932e7352f1a9f9fe3cc70790a0ff72e698dfa7c04ff16e0",
   "deps": {
     "account": "1.0.1",
     "array": "https://github.com/aviate-labs/array.mo#v0.2.0@863a668bcbb3c3799a62c36b2cba2c32d1fcc433",
@@ -27,9 +27,10 @@
     "sha2": "0.1.12",
     "sha2@0": "0.1.6",
     "stable-write-only": "0.2.1",
+    "stableheapbtreemap": "1.5.0",
     "star": "0.1.1",
     "test": "2.1.2",
-    "timer-tool": "0.2.1",
+    "timer-tool": "0.2.2",
     "vector": "0.4.1",
     "xtended-numbers@2": "2.1.0"
   },
@@ -45,6 +46,7 @@
     "base@0.14.9": {},
     "base@0.16.0": {},
     "base@0.7.6": {},
+    "base@0.8.7": {},
     "buffer@0.1.0": {
       "base@0": "0.16.0",
       "core@1": "1.0.0"
@@ -121,6 +123,9 @@
     "stable-write-only@0.2.1": {
       "core": "2.1.0"
     },
+    "stableheapbtreemap@1.5.0": {
+      "base": "0.8.7"
+    },
     "star@0.1.1": {
       "base": "https://github.com/dfinity/motoko-base#moc-0.10.1@80ededb39954739b18b88fc0e5561264003cf9ab",
       "matchers": "https://github.com/kritzcreek/motoko-matchers#v1.3.0@3dac8a071b69e4e651b25a7d9683fe831eb7cffd"
@@ -131,6 +136,13 @@
     "timer-tool@0.2.1": {
       "class-plus": "0.2.1",
       "core": "2.1.0",
+      "star": "0.1.1"
+    },
+    "timer-tool@0.2.2": {
+      "class-plus": "0.2.1",
+      "core": "2.1.0",
+      "map": "9.0.1",
+      "stableheapbtreemap": "1.5.0",
       "star": "0.1.1"
     },
     "vector@0.4.1": {
@@ -515,6 +527,18 @@
       "stable-write-only@0.2.1/testActor/childv2.mo": "5fe6304532c8a604afb90e2753689ff86f858617964e05fb85bcd29b8b86473a",
       "stable-write-only@0.2.1/testActor/test_runner.mo": "929e8a316fd2c2de08c1833280f469d33fa2bedddba3e3f06a655de95acb3030"
     },
+    "stableheapbtreemap@1.5.0": {
+      "stableheapbtreemap@1.5.0/LICENSE": "a70773cd5e9aa630d0a333a272e0fc5a54c72e6701ded2395417b09d94265e18",
+      "stableheapbtreemap@1.5.0/README.md": "c6fcb2dac3fac8f0302048a1c18df447a61ced349cf74d6626aba350fa8c5cc2",
+      "stableheapbtreemap@1.5.0/mops.toml": "4964fcb6fe32143e0807c9ed0626813e5fe786a34cc92557fdac3d620dca85e6",
+      "stableheapbtreemap@1.5.0/performance_testing/src/btree.mo": "d305dbcc35f436361f3d42a2d3456bfa31a1ba01e9fb4b85df3b86df3b7e6328",
+      "stableheapbtreemap@1.5.0/src/ArrayUtil.mo": "8c79ab4cb596dfe9a0c5d560daabc4d5d8ea895e6e44248bd787de911549635b",
+      "stableheapbtreemap@1.5.0/src/BTree.mo": "0bf6d28c7f48d4e6b3721bdf990735f3d0edd61a79de33afd40ec0080a485489",
+      "stableheapbtreemap@1.5.0/src/BinarySearch.mo": "473324dc4ee661ae082d6945048e055d27072ea81da938369cba1d06b1d0352d",
+      "stableheapbtreemap@1.5.0/src/Check.mo": "c9a3189ba0669abf69c83c2ab525f5cc9312df5ec1bfbcaad7812b0d958301bc",
+      "stableheapbtreemap@1.5.0/src/NodeUtil.mo": "1ab779e112b84093d62fa9e159b9b7727a667656f00be6c3a2938c699a78b1dc",
+      "stableheapbtreemap@1.5.0/src/Types.mo": "d99c0bcb0fc6ed687e98cad7e17e605834de9981fa49e0df8e54810a0a2c8139"
+    },
     "star@0.1.1": {
       "star@0.1.1/LICENSE": "4629ebc80b8d846bc81b6ba52c38ffe22288a7c6ed377e173196e311c2056bfa",
       "star@0.1.1/README.md": "87c310c1d4994d17218da7334927a0270ddf8581fdd2d4c24ea7e5deebe9e1c9",
@@ -551,27 +575,29 @@
       "test@2.1.2/src/lib.mo": "e4559fbc3bcd229fb99de7dcdd68d56319ae8bc27509d6f3ad6d13c514915a39",
       "test@2.1.2/src/utils.mo": "6b81172d908c2fb759597373b811e22a987d4cd69f1aa69615da252bed6e7466"
     },
-    "timer-tool@0.2.1": {
-      "timer-tool@0.2.1/LICENSE": "f6c9bd23a5100627d02879ccd50c806bbf2610d9f7f42e3eb3188c048aa1ff14",
-      "timer-tool@0.2.1/README.md": "c48cf073b16bdc9514f625e76650f2a98646eeef47351269a58b8d95f0b041c0",
-      "timer-tool@0.2.1/mops.toml": "0f9102d0356618c3a6a1ffe32e70dc18298fa98816a984c26dfb4ce7538beadb",
-      "timer-tool@0.2.1/src/TimerToolMixin.mo": "25732d8806837a1edbc03aeae877273ba949ca99c63429fce7a05fc01fa3988f",
-      "timer-tool@0.2.1/src/canister.mo": "0a297825a250b05ea71acdba8c56a99cf42f91c017fbfa694767f0c314484e86",
-      "timer-tool@0.2.1/src/collector.mo": "fccd3446e2010e7d9d8c5506a745bb8bb9a0ddc610455cde315f1b8131910d9d",
-      "timer-tool@0.2.1/src/examples/DirectClassCanister.mo": "93d7fae3b880433f128151a5b2b4da38e383c4ce5b1275f0e75c8909cc81c1f3",
-      "timer-tool@0.2.1/src/examples/MixinCanister.mo": "3422540b9c2d1e817847279440d0ef609043fff1c8e908577658252f2a893044",
-      "timer-tool@0.2.1/src/examples/OVSTestCanisterV1.mo": "f6cc6e80d5e6de5e773d6ad0a330ef66a5eab238fb027c19103ca6fc2a14d673",
-      "timer-tool@0.2.1/src/examples/OVSTestCanisterV2.mo": "98a6e476a47c1aec9f7c9f0190dc8044ca999869695875d863ca652140d719b5",
-      "timer-tool@0.2.1/src/lib.mo": "01dcc93967932fc34fb42e726fa225c1154a25c0d6601115d23df58f022fe145",
-      "timer-tool@0.2.1/src/migrations/lib.mo": "573d5b77beb97ba3194a252c5e0694821caa78c343c0cb17e52459c9319fa476",
-      "timer-tool@0.2.1/src/migrations/types.mo": "24c6bc4efe0d1bdcf2abb2ad409c606215b3975f9d8f61943935fe69176ce2bb",
-      "timer-tool@0.2.1/src/migrations/v000_000_000/lib.mo": "bb3cf3312d004ff40e73008b1ff7e9d179e8e3611cdcadd0e7573466bf4069c6",
-      "timer-tool@0.2.1/src/migrations/v000_000_000/types.mo": "15565a67979f6f4952869ff1b7a46bd3a6c4c03fd2b7c9e0982bd51c232194d9",
-      "timer-tool@0.2.1/src/migrations/v000_001_000/lib.mo": "22d16c53215ff4f638e534562ac83b0df582a13bf67fb8b99ffc8b9596bf9556",
-      "timer-tool@0.2.1/src/migrations/v000_001_000/types.mo": "a7875cf672496700652eb4adccafa530641f56d094ec3ef231909adf3397e612",
-      "timer-tool@0.2.1/src/openvaluesharing.consumer_example.mo": "360eccf37c9a2e743af2315c6d69ac4a319dfc810dbaf78fb9290c8402251f8a",
-      "timer-tool@0.2.1/src/openvaluesharing.mo": "65a3dd10dc9bb09b3a44be839f90827b3edc270807a84e8ff106abb08dc20e5f",
-      "timer-tool@0.2.1/src/ovs.mo": "9812b379530c45f3aeb596cfb7739d2f049085344c5a270cc6d6f5ebc6ab4c56"
+    "timer-tool@0.2.2": {
+      "timer-tool@0.2.2/LICENSE": "f6c9bd23a5100627d02879ccd50c806bbf2610d9f7f42e3eb3188c048aa1ff14",
+      "timer-tool@0.2.2/README.md": "c48cf073b16bdc9514f625e76650f2a98646eeef47351269a58b8d95f0b041c0",
+      "timer-tool@0.2.2/mops.toml": "1163258a3a98989702b4ea326733556343a85beae5803f93295568a628747d01",
+      "timer-tool@0.2.2/src/TimerToolMixin.mo": "25732d8806837a1edbc03aeae877273ba949ca99c63429fce7a05fc01fa3988f",
+      "timer-tool@0.2.2/src/canister.mo": "f376019688072be370449bc8ed820114c7afa7033d6fc964ea5ba011d33b82d1",
+      "timer-tool@0.2.2/src/collector.mo": "fccd3446e2010e7d9d8c5506a745bb8bb9a0ddc610455cde315f1b8131910d9d",
+      "timer-tool@0.2.2/src/examples/DirectClassCanister.mo": "93d7fae3b880433f128151a5b2b4da38e383c4ce5b1275f0e75c8909cc81c1f3",
+      "timer-tool@0.2.2/src/examples/MixinCanister.mo": "3422540b9c2d1e817847279440d0ef609043fff1c8e908577658252f2a893044",
+      "timer-tool@0.2.2/src/examples/OVSTestCanisterV1.mo": "f6cc6e80d5e6de5e773d6ad0a330ef66a5eab238fb027c19103ca6fc2a14d673",
+      "timer-tool@0.2.2/src/examples/OVSTestCanisterV2.mo": "98a6e476a47c1aec9f7c9f0190dc8044ca999869695875d863ca652140d719b5",
+      "timer-tool@0.2.2/src/lib.mo": "b37136af0cb77993c4f4193abfa0729dc5da174e3030c8b91b7f6a7e071b4cbb",
+      "timer-tool@0.2.2/src/migrations/lib.mo": "bee518434ee0d23f3c0a460b1f7e29dea4660ebb3ad349d5e3682496f9dbd824",
+      "timer-tool@0.2.2/src/migrations/types.mo": "1799420ec6cf7b710c943d920f2be436b3f886fc48f091acff7015bcc0866e98",
+      "timer-tool@0.2.2/src/migrations/v000_000_000/lib.mo": "bb3cf3312d004ff40e73008b1ff7e9d179e8e3611cdcadd0e7573466bf4069c6",
+      "timer-tool@0.2.2/src/migrations/v000_000_000/types.mo": "15565a67979f6f4952869ff1b7a46bd3a6c4c03fd2b7c9e0982bd51c232194d9",
+      "timer-tool@0.2.2/src/migrations/v000_001_000/lib.mo": "7b94054c9391349ca49585476949bcded844b737328e2ad83b64f002fbff8f2b",
+      "timer-tool@0.2.2/src/migrations/v000_001_000/types.mo": "86f126e3009f978998152ee3b30d6fc9014d6ed8c6c2d97d43556dbbeeada479",
+      "timer-tool@0.2.2/src/migrations/v000_002_000/lib.mo": "6e117b0724b57a9e20672054ce171e1e7fe6ae1da563243aa721f81cebe8467d",
+      "timer-tool@0.2.2/src/migrations/v000_002_000/types.mo": "a7875cf672496700652eb4adccafa530641f56d094ec3ef231909adf3397e612",
+      "timer-tool@0.2.2/src/openvaluesharing.consumer_example.mo": "360eccf37c9a2e743af2315c6d69ac4a319dfc810dbaf78fb9290c8402251f8a",
+      "timer-tool@0.2.2/src/openvaluesharing.mo": "65a3dd10dc9bb09b3a44be839f90827b3edc270807a84e8ff106abb08dc20e5f",
+      "timer-tool@0.2.2/src/ovs.mo": "9812b379530c45f3aeb596cfb7739d2f049085344c5a270cc6d6f5ebc6ab4c56"
     },
     "vector@0.4.1": {
       "vector@0.4.1/LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",

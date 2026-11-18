@@ -4,7 +4,7 @@ star = "0.1.1"
 rep-indy-hash = "0.2.1"
 account = "1.0.1"
 ovs-fixed = "0.2.2"
-timer-tool = "0.2.1"
+timer-tool = "0.2.2"
 class-plus = "0.2.1"
 
 [dev-dependencies]
