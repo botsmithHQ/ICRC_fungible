@@ -173,7 +173,10 @@ patch_icrc3_to_044() {
 # timer-tool must be exactly 0.2.1 (tree hash below), it is replaced by HEAD's
 # 0.2.2 package and must then be identical to it, plus the packages 0.2.2
 # imports that the ref does not resolve (stableheapbtreemap; map, if neither
-# the ref nor the icrc3 delta brings it). The rest of the baseline is the ref's.
+# the ref nor the icrc3 delta brings it). The rest of the baseline is the ref's,
+# its `base` included (the mops2 refs resolve a git base, not HEAD's 0.16.0):
+# stableheapbtreemap is built against it, and the build is the check. The
+# "patched" line is printed only after the baseline compiled.
 # The cli = mops refs (d894507, 091b5e3) get it too: they also have 0.2.1.
 # Remove this block once every baseline ref is a commit that already has 0.2.2.
 # The tree hash: sha256 of `shasum -a 256` of every file of the package, in
@@ -233,7 +236,8 @@ patch_timer_tool_to_022() {
     git status --porcelain --untracked-files=all >&2
     return 1
   fi
-  echo "timer-tool delta: $dir patched 0.2.1 -> 0.2.2 (whole package, now identical to HEAD's $(basename "$TT_HEAD"))"
+  echo "timer-tool delta: $dir was timer-tool 0.2.1 (tree $got), replaced by HEAD's $(basename "$TT_HEAD") (identical, nothing tracked changed); build pending"
+  TT_PATCHED="$dir"
 }
 
 git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
@@ -254,6 +258,7 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
     echo "timer-tool delta: baseline $BASELINE_REF does not resolve timer-tool" >&2
     exit 1
   fi
+  TT_PATCHED=""
   patch_timer_tool_to_022 "$(dirname "$TT_SRC")"
   # The packages 0.2.2 imports that the baseline does not resolve yet.
   TT_EXTRA_SOURCES=""
@@ -267,15 +272,12 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
       echo "timer-tool delta: $pkg added from HEAD"
     fi
   done
-  # stableheapbtreemap imports mo:base: the baseline's base must be HEAD's.
+  # stableheapbtreemap imports mo:base and is built against the baseline's own
+  # base, which may differ from HEAD's: printed, not compared; the build checks it.
   if [ "$TT_KIND" = tt022 ]; then
     BASE_REF_SRC="$("$MOPS2" sources | awk '$1 == "--package" && $2 == "base" { print $3 }')"
     BASE_HEAD_SRC="$(cd "$ROOT" && mops sources | awk '$1 == "--package" && $2 == "base" { print $3 }')"
-    if [ -z "$BASE_REF_SRC" ] || [ "$(basename "$(dirname "$BASE_REF_SRC")")" != "$(basename "$(dirname "$BASE_HEAD_SRC")")" ]; then
-      echo "timer-tool delta: baseline base '$BASE_REF_SRC' is not HEAD's '$BASE_HEAD_SRC' (stableheapbtreemap is built against it)" >&2
-      exit 1
-    fi
-    echo "timer-tool delta: base $(basename "$(dirname "$BASE_REF_SRC")") (same as HEAD)"
+    echo "timer-tool delta: stableheapbtreemap built against the baseline's base '${BASE_REF_SRC:-none}' (HEAD's: '$BASE_HEAD_SRC')"
   fi
   # [main] = head:<path>: a file of THIS tree (a test harness the ref does not
   # have), copied into the throwaway worktree and compiled against the ref's
@@ -295,7 +297,13 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
   SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES $TT_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
   # shellcheck disable=SC2086
-  "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null
+  if ! "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null; then
+    echo "baseline $BASELINE_REF ($NAME): moc failed${TT_PATCHED:+ with the timer-tool delta}" >&2
+    exit 1
+  fi
+  if [ -n "$TT_PATCHED" ]; then
+    echo "timer-tool delta: $TT_PATCHED patched 0.2.1 -> 0.2.2 (whole package, identical to HEAD's $(basename "$TT_HEAD")); baseline built"
+  fi
 )
 
 out_dir=".dfx/local/canisters/$NAME"
