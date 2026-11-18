@@ -60,6 +60,10 @@ ALL=(
   # `head:` compiles this tree's file against that commit's libraries.
   "token_recents_base:@baseline 091b5e3 token_recents_base src/Token.mo mops"
   "recents_probe_base:@baseline 091b5e3 recents_probe_base head:pic/RecentsProbe.mo mops"
+  # The ledger just BEFORE timer-tool 0.2.2 (41fd7aa^ = 09ba06a), its timer-tool
+  # 0.2.1 kept as it is (keep-tt): HEAD must refuse to upgrade it in place
+  # (pic/timertool_022_break.test.ts, vendor/README.md "timer-tool").
+  "token_pre_tt022:@baseline 09ba06a token_pre_tt022 src/Token.mo mops keep-tt"
 )
 
 MOC="$(mops toolchain bin moc)"
