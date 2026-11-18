@@ -240,6 +240,13 @@ patch_timer_tool_to_022() {
   TT_PATCHED="$dir"
 }
 
+# moc's stderr of the baseline build, passed on with a final newline.
+moc_stderr() {
+  [ -s "$TMP/moc.err" ] || return 0
+  cat "$TMP/moc.err" >&2
+  [ -z "$(tail -c 1 "$TMP/moc.err")" ] || echo >&2
+}
+
 git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
 (
   cd "$TMP/src"
@@ -296,11 +303,16 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
   esac
   SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES $TT_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
+  # moc's stderr (its -v report and any warnings) is kept apart and passed on with
+  # a final newline: a last line without one would glue the next line of this
+  # script to it.
   # shellcheck disable=SC2086
-  if ! "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null; then
+  if ! "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null 2>"$TMP/moc.err"; then
+    moc_stderr
     echo "baseline $BASELINE_REF ($NAME): moc failed${TT_PATCHED:+ with the timer-tool delta}" >&2
     exit 1
   fi
+  moc_stderr
   if [ -n "$TT_PATCHED" ]; then
     echo "timer-tool delta: $TT_PATCHED patched 0.2.1 -> 0.2.2 (whole package, identical to HEAD's $(basename "$TT_HEAD")); baseline built"
   fi
