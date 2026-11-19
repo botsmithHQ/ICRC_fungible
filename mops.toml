@@ -20,7 +20,7 @@ icrc3-mo = "./vendor/icrc3-mo"
 icrc4-mo = "0.2.1"
 ic-certification = "1.1.0"
 class-plus = "0.2.1"
-timer-tool = "0.2.1"
+timer-tool = "0.2.2"
 star = "0.1.1"
 
 [dev-dependencies]

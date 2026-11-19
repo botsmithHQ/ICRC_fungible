@@ -15,7 +15,7 @@ ic-certification = "1.1.0"
 stable-write-only = "0.2.1"
 leb128 = "1.1.0"
 ovs-fixed = "0.2.2"
-timer-tool = "0.2.1"
+timer-tool = "0.2.2"
 map = "9.0.1"
 vector = "0.4.1"
 

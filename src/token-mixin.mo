@@ -454,7 +454,12 @@ shared ({ caller = _owner }) persistent actor class Token(args: ?{
     // the re-arm cancels it. Without the auto-timer this line is required:
     // the first schedule would then come from a later block and could cancel
     // the ICRC-3 archive timer (pic/timertool_upgrade.test.ts, on Token.mo).
+    //
+    // timer-tool 0.2.2 keeps its state as `#v0_2_0`; `#v0_1_0` is a 0.1.x
+    // state that TimerTool has not migrated yet. Both hold `nextTimer`. A
+    // `#v0_1_0` arm alone never matches a 0.2.2 state, and the reset is lost.
     switch (org_icdevs_timer_tool_state) {
+      case (#v0_2_0(#data(s))) { s.nextTimer := null };
       case (#v0_1_0(#data(s))) { s.nextTimer := null };
       case (_) {};
     };

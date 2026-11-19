@@ -22,12 +22,15 @@
 #   .dfx/local/canisters/<name>/<name>.wasm.gz
 # The throwaway worktree is removed on exit.
 #
-# Usage: bash pic/build-baseline-wasm.sh [ref] [name] [main] [cli]
-#        (defaults: BASELINE_REF below, token_baseline, src/Token.mo, mops2)
+# Usage: bash pic/build-baseline-wasm.sh [ref] [name] [main] [cli] [tt]
+#        (defaults: BASELINE_REF below, token_baseline, src/Token.mo, mops2, tt022)
 #        cli = mops2: the ref has a 2.x mops.lock and icrc3-mo 0.4.3 (built with
 #        MOPS2, icrc3 patched to 0.4.4, see below). cli = mops: the ref already
 #        has a 3.x lock and icrc3-mo 0.4.4 (built with the repo's own mops, no
-#        patch).
+#        patch). Both kinds get timer-tool 0.2.1 replaced by HEAD's 0.2.2 (see
+#        "timer-tool 0.2.1 -> 0.2.2 in the baseline" below). tt = keep-tt
+#        builds the ref's timer-tool 0.2.1 as it is (checked, not replaced): the
+#        ledger that pic/timertool_022_break.test.ts expects HEAD to refuse.
 # pic/build-token-wasm.sh runs it for each of those targets.
 set -euo pipefail
 
@@ -36,6 +39,11 @@ BASELINE_REF="${1:-5fb6104}"
 NAME="${2:-token_baseline}"
 MAIN="${3:-src/Token.mo}"
 CLI_KIND="${4:-mops2}"
+TT_KIND="${5:-tt022}"
+case "$TT_KIND" in
+  tt022|keep-tt) ;;
+  *) echo "unknown tt '$TT_KIND' (tt022 | keep-tt)" >&2; exit 1 ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -155,6 +163,90 @@ patch_icrc3_to_044() {
   echo "icrc3 delta: $dir patched 0.4.3 -> 0.4.4 (4 files, now identical to HEAD's vendor/icrc3-mo)"
 }
 
+# --- timer-tool 0.2.1 -> 0.2.2 in the baseline (TEMPORARY, see vendor/README.md) ---
+# timer-tool 0.2.2 gave `#v0_1_0` back its 0.1.x shape and moved the mo:core
+# layout to a new `#v0_2_0`. Motoko checks the whole stored type, so a ledger
+# (and an archive) built with timer-tool 0.2.0-0.2.1 cannot be upgraded in place
+# to a 0.2.2 build: M0170, "RTS error: Memory-incompatible program upgrade".
+# Every baseline ref predates the bump (all of them resolve timer-tool 0.2.1),
+# so each baseline gets the whole upstream 0.2.2 package instead: the ref's
+# timer-tool must be exactly 0.2.1 (tree hash below), it is replaced by HEAD's
+# 0.2.2 package and must then be identical to it, plus the packages 0.2.2
+# imports that the ref does not resolve (stableheapbtreemap; map, if neither
+# the ref nor the icrc3 delta brings it). The rest of the baseline is the ref's,
+# its `base` included (the mops2 refs resolve a git base, not HEAD's 0.16.0):
+# stableheapbtreemap is built against it, and the build is the check. The
+# "patched" line is printed only after the baseline compiled.
+# The cli = mops refs (d894507, 091b5e3) get it too: they also have 0.2.1.
+# Remove this block once every baseline ref is a commit that already has 0.2.2.
+# The tree hash: sha256 of `shasum -a 256` of every file of the package, in
+# LC_ALL=C order, paths relative to the package root (see tt_tree_hash).
+TT021_TREE_SHA256="5cb65e2f93b52e04c6fe7193e7b6001fa0b139912bd3f73e1ab56ec54f77ab52"
+tt_tree_hash() {
+  (cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do shasum -a 256 "$f"; done | shasum -a 256 | cut -c1-64)
+}
+# HEAD's timer-tool package root and the two packages it may need, copied under
+# $TMP before the baseline is installed ($ROOT may contain spaces).
+TT_HEAD_SRC="$(cd "$ROOT" && mops sources | awk '$1 == "--package" && $2 == "timer-tool" { print $3 }')"
+case "$TT_HEAD_SRC" in
+  *timer-tool@0.2.2/src) ;;
+  *) echo "timer-tool delta: HEAD does not resolve timer-tool 0.2.2 ('$TT_HEAD_SRC'; run mops install at the repo root)" >&2; exit 1 ;;
+esac
+TT_HEAD="$ROOT/$(dirname "$TT_HEAD_SRC")"
+for pkg in stableheapbtreemap map; do
+  src="$(cd "$ROOT" && mops sources | awk -v p="$pkg" '$1 == "--package" && $2 == p { print $3 }')"
+  if [ -z "$src" ] || [ ! -d "$ROOT/$src" ]; then
+    echo "timer-tool delta: HEAD does not resolve '$pkg' (run mops install at the repo root)" >&2
+    exit 1
+  fi
+  cp -R "$ROOT/$src" "$TMP/tt-pkg-$pkg"
+done
+
+patch_timer_tool_to_022() {
+  local dir="$1" got porcelain_before
+  if [ -L "$dir" ] || [ ! -d "$dir" ]; then
+    echo "timer-tool delta: $dir is not a plain directory in the baseline; refusing to write to it" >&2
+    return 1
+  fi
+  if [ -n "$(find "$dir" -type l)" ]; then
+    echo "timer-tool delta: $dir holds symlinks; refusing to write through them" >&2
+    return 1
+  fi
+  got="$(tt_tree_hash "$dir")"
+  if [ "$got" != "$TT021_TREE_SHA256" ]; then
+    echo "timer-tool delta: baseline $BASELINE_REF: $dir is not timer-tool 0.2.1 (tree $got); not patching" >&2
+    return 1
+  fi
+  if [ "$TT_KIND" = keep-tt ]; then
+    echo "timer-tool delta: keep-tt, $dir left as timer-tool 0.2.1 (tree checked)"
+    return 0
+  fi
+  porcelain_before="$(git status --porcelain --untracked-files=all)"
+  rm -rf "$dir"
+  cp -R "$TT_HEAD" "$dir"
+  # (a) the package is now HEAD's 0.2.2, byte for byte, nothing more or less;
+  if ! diff -r "$TT_HEAD" "$dir" >/dev/null; then
+    echo "timer-tool delta: $dir differs from HEAD's timer-tool 0.2.2 after patching" >&2
+    diff -rq "$TT_HEAD" "$dir" >&2 || true
+    return 1
+  fi
+  # (b) and nothing tracked changed (.mops/ is ignored).
+  if [ "$(git status --porcelain --untracked-files=all)" != "$porcelain_before" ]; then
+    echo "timer-tool delta: the baseline tree changed outside $dir:" >&2
+    git status --porcelain --untracked-files=all >&2
+    return 1
+  fi
+  echo "timer-tool delta: $dir was timer-tool 0.2.1 (tree $got), replaced by HEAD's $(basename "$TT_HEAD") (identical, nothing tracked changed); build pending"
+  TT_PATCHED="$dir"
+}
+
+# moc's stderr of the baseline build, passed on with a final newline.
+moc_stderr() {
+  [ -s "$TMP/moc.err" ] || return 0
+  cat "$TMP/moc.err" >&2
+  [ -z "$(tail -c 1 "$TMP/moc.err")" ] || echo >&2
+}
+
 git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
 (
   cd "$TMP/src"
@@ -167,6 +259,32 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
   fi
   if [ "$CLI_KIND" = mops2 ]; then
     patch_icrc3_to_044 "$(dirname "$ICRC3_SRC")"
+  fi
+  TT_SRC="$("$MOPS2" sources | awk '$1 == "--package" && $2 == "timer-tool" { print $3 }')"
+  if [ -z "$TT_SRC" ]; then
+    echo "timer-tool delta: baseline $BASELINE_REF does not resolve timer-tool" >&2
+    exit 1
+  fi
+  TT_PATCHED=""
+  patch_timer_tool_to_022 "$(dirname "$TT_SRC")"
+  # The packages 0.2.2 imports that the baseline does not resolve yet.
+  TT_EXTRA_SOURCES=""
+  [ "$TT_KIND" = keep-tt ] || for pkg in stableheapbtreemap map; do
+    if "$MOPS2" sources | awk -v p="$pkg" '$1 == "--package" && $2 == p { f = 1 } END { exit !f }'; then
+      echo "timer-tool delta: the baseline resolves $pkg itself"
+    elif [[ " $ICRC3_EXTRA_SOURCES " == *" --package $pkg "* ]]; then
+      echo "timer-tool delta: $pkg comes with the icrc3 delta"
+    else
+      TT_EXTRA_SOURCES+="--package $pkg $TMP/tt-pkg-$pkg "
+      echo "timer-tool delta: $pkg added from HEAD"
+    fi
+  done
+  # stableheapbtreemap imports mo:base and is built against the baseline's own
+  # base, which may differ from HEAD's: printed, not compared; the build checks it.
+  if [ "$TT_KIND" = tt022 ]; then
+    BASE_REF_SRC="$("$MOPS2" sources | awk '$1 == "--package" && $2 == "base" { print $3 }')"
+    BASE_HEAD_SRC="$(cd "$ROOT" && mops sources | awk '$1 == "--package" && $2 == "base" { print $3 }')"
+    echo "timer-tool delta: stableheapbtreemap built against the baseline's base '${BASE_REF_SRC:-none}' (HEAD's: '$BASE_HEAD_SRC')"
   fi
   # [main] = head:<path>: a file of THIS tree (a test harness the ref does not
   # have), copied into the throwaway worktree and compiled against the ref's
@@ -183,10 +301,21 @@ git worktree add --detach "$TMP/src" "$BASELINE_REF" >/dev/null
       cp "$ROOT/$MAIN" "$MAIN"
       ;;
   esac
-  SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES"
+  SOURCES="$("$MOPS2" sources | tr '\n' ' ') $ICRC3_EXTRA_SOURCES $TT_EXTRA_SOURCES"
   echo "baseline $BASELINE_REF ($(git rev-parse --short HEAD)), moc $("$MOC" --version)"
+  # moc's stderr (its -v report and any warnings) is kept apart and passed on with
+  # a final newline: a last line without one would glue the next line of this
+  # script to it.
   # shellcheck disable=SC2086
-  "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null
+  if ! "$MOC" $SOURCES -v --incremental-gc -o "$TMP/$NAME.wasm" "$MAIN" >/dev/null 2>"$TMP/moc.err"; then
+    moc_stderr
+    echo "baseline $BASELINE_REF ($NAME): moc failed${TT_PATCHED:+ with the timer-tool delta}" >&2
+    exit 1
+  fi
+  moc_stderr
+  if [ -n "$TT_PATCHED" ]; then
+    echo "timer-tool delta: $TT_PATCHED patched 0.2.1 -> 0.2.2 (whole package, identical to HEAD's $(basename "$TT_HEAD")); baseline built"
+  fi
 )
 
 out_dir=".dfx/local/canisters/$NAME"
