@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A block read serves at most 2 000 blocks per call** (`src/Token.mo`, `MAX_BLOCKS_PER_CALL`).
+  `icrc3_get_blocks`, `get_blocks` and `get_transactions` are queries, but a call from another
+  canister, or one sent as an update, runs replicated and the ledger pays for it, and `inspect`
+  never sees a call from a canister. The body built whatever was asked (up to 100 000 blocks, and
+  with no bound at all from a canister) and only trapped once the reply passed 2 MiB, after doing
+  the work. Now a request for more than 2 000 blocks, counted over all its ranges (local blocks and
+  archive pointers alike), gets the first 2 000 of what it asked for, in the order asked, and a
+  range left empty is dropped. ICRC-3 lets a ledger return fewer blocks than requested: a client
+  asks again from where the reply ended, as it already does with the DFINITY ledger, whose limit
+  is the same 2 000, and the Motoko index asks for batches of 2 000. A request under the cap gets
+  what it got before. The Candid interface does not change. `inspect` now checks only the shape of
+  a block read (at most 100 ranges, every number under 10^40) and no longer refuses a large
+  length: such a request is served capped, like a query or a call from a canister, where it used
+  to be refused at ingress above 10 000 blocks per range or 100 000 in total. `src/token-mixin.mo`
+  is unchanged: its block reads come from the icrc3-mo mixin. Test: `pic/get_blocks_cap.test.ts`.
 - **A mint through `icrc2_transfer_from` respects `max_supply`** (`vendor/icrc2-mo`, a local fork
   of icrc2-mo 0.2.1). A transfer_from whose `from` is the minting account is a mint, and upstream
   credited it without checking `max_supply`: the minting account (no approval needed for its own
