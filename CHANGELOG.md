@@ -17,9 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the work. Now a request for more than 2 000 blocks, counted over all its ranges (local blocks and
   archive pointers alike), gets the first 2 000 of what it asked for, in the order asked, and a
   range left empty is dropped. ICRC-3 lets a ledger return fewer blocks than requested: a client
-  asks again from where the reply ended, as it already does with the DFINITY ledger, whose limit
-  is the same 2 000, and the Motoko index asks for batches of 2 000. A request under the cap gets
-  what it got before. The Candid interface does not change. `inspect` now checks only the shape of
+  asks again from where the reply ended, and the Motoko index asks for batches of 2 000. A request
+  under the cap gets what it got before. The Candid interface does not change. The cap counts
+  blocks, not bytes: a ledger configured with memos of kilobytes can still build a reply past the
+  2 MiB limit.
+- **An empty block read no longer traps when it starts inside an archive.** The library traps on
+  an empty range whose start is an archived block. `icrc3_get_blocks` now drops such a range, and
+  `get_blocks` / `get_transactions` read an empty request from block 0, which gives the same reply. `inspect` now checks only the shape of
   a block read (at most 100 ranges, every number under 10^40) and no longer refuses a large
   length: such a request is served capped, like a query or a call from a canister, where it used
   to be refused at ingress above 10 000 blocks per range or 100 000 in total. `src/token-mixin.mo`

@@ -1352,8 +1352,9 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
   /// archive pointers alike. A request for more gets the first
   /// MAX_BLOCKS_PER_CALL blocks of what it asked for, in order, and the client
   /// asks again from where the reply ended: ICRC-3 lets a ledger return fewer
-  /// blocks than requested. 2 000 is the limit of the DFINITY ICRC ledger and
-  /// the batch an index asks for.
+  /// blocks than requested. 2 000 is the batch the Motoko index asks for. The
+  /// cap counts blocks, not bytes: a ledger configured with memos of kilobytes
+  /// can still build a reply past the 2 MiB limit.
   ///
   /// These methods are queries, but a call from another canister, or one sent
   /// as an update, runs replicated and the ledger pays for it, and `inspect`
@@ -1378,7 +1379,12 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
     List.toArray(kept);
   };
 
+  /// A legacy read's range, its length cut to MAX_BLOCKS_PER_CALL. An empty
+  /// range is read from 0: the reply is the same (no blocks, no archive, the
+  /// same first index), and the library traps on an empty range that starts
+  /// inside an archive.
   func capBlockRange(range : ICRC3.TransactionRange) : ICRC3.TransactionRange {
+    if (range.length == 0) return { start = 0; length = 0 };
     { start = range.start; length = Nat.min(range.length, MAX_BLOCKS_PER_CALL) };
   };
 

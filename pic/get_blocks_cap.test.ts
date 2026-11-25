@@ -333,6 +333,12 @@ describe('block reads with archives: a client and the index reach the end', () =
     // The library traps on such a range; the cap drops it before the library sees it.
     const r = await c.getBlocks([{ start: 5n, length: 0n }, { start: 0n, length: 3n }]);
     expect(r.archived_blocks.flatMap((a) => a.args)).toEqual([{ start: 0n, length: 3n }]);
+    // The legacy reads: no blocks, and the first index of an empty read.
+    const tip = await c.legacyBlocks(1_000_000n, 0n);
+    const blocks = await c.legacyBlocks(5n, 0n);
+    expect([blocks.blocks.length, blocks.first_index, blocks.chain_length]).toEqual([0, tip.first_index, BigInt(LOG)]);
+    const txs = await c.legacyTransactions(5n, 0n);
+    expect([txs.transactions.length, txs.first_index, txs.log_length]).toEqual([0, tip.first_index, BigInt(LOG)]);
   });
 
   it('the Motoko index syncs every block, past the cap', async () => {
