@@ -764,6 +764,10 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
 
   func bounded(n : Nat) : Bool { n < NAT_BOUND };
 
+  func validBlockRange(range : ICRC3.TransactionRange) : Bool {
+    bounded(range.start) and bounded(range.length);
+  };
+
   func boundedOpt(n : ?Nat) : Bool {
     switch (n) { case (?value) value < NAT_BOUND; case (null) true };
   };
@@ -962,18 +966,18 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
       case (#icrc103_get_allowances(getArgs)) {
         ICRC2Inspect.inspectGetAllowances(getArgs(), ?icrc2Config);
       };
+      // Block reads: the shape of the request only. How many blocks a read
+      // gets is decided in the body, for every caller (MAX_BLOCKS_PER_CALL).
       case (#icrc3_get_blocks(getArgs)) {
-        ICRC3Inspect.inspectGetBlocks(getArgs(), null);
+        let ranges = getArgs();
+        ranges.size() <= ICRC3Inspect.defaultConfig.maxRangesPerRequest
+        and Array.all(ranges, validBlockRange);
       };
       case (#icrc3_get_archives(getArgs)) {
         ICRC3Inspect.inspectGetArchives(getArgs(), null);
       };
-      case (#get_blocks(getArgs)) {
-        ICRC3Inspect.inspectLegacyBlocks(getArgs(), null);
-      };
-      case (#get_transactions(getArgs)) {
-        ICRC3Inspect.inspectLegacyBlocks(getArgs(), null);
-      };
+      case (#get_blocks(getArgs)) validBlockRange(getArgs());
+      case (#get_transactions(getArgs)) validBlockRange(getArgs());
       // A batch may weigh what its entries account for, not what the largest
       // batch would: one entry padded to the cap is refused.
       case (#icrc4_transfer_batch(getArgs)) {
@@ -1343,20 +1347,61 @@ shared ({ caller = _owner }) persistent actor class Token  (args: ?{
     return icrc2().getAllowances(caller, args);
   };
 
+  /// The most blocks one call of `icrc3_get_blocks`, `get_blocks` or
+  /// `get_transactions` serves, counted over all its ranges, local blocks and
+  /// archive pointers alike. A request for more gets the first
+  /// MAX_BLOCKS_PER_CALL blocks of what it asked for, in order, and the client
+  /// asks again from where the reply ended: ICRC-3 lets a ledger return fewer
+  /// blocks than requested. 2 000 is the batch the Motoko index asks for. The
+  /// cap counts blocks, not bytes: a ledger configured with memos of kilobytes
+  /// can still build a reply past the 2 MiB limit.
+  ///
+  /// These methods are queries, but a call from another canister, or one sent
+  /// as an update, runs replicated and the ledger pays for it, and `inspect`
+  /// never sees a call from a canister. This bound is the one that governs:
+  /// `inspect` checks only the shape of a block read, never its size.
+  transient let MAX_BLOCKS_PER_CALL : Nat = 2_000;
+
+  /// `ranges` cut to MAX_BLOCKS_PER_CALL blocks in total, from the front. A
+  /// range left empty is dropped: the library traps on an empty range that
+  /// starts inside an archive.
+  func capBlockRanges(ranges : ICRC3.GetBlocksArgs) : ICRC3.GetBlocksArgs {
+    var served = 0;
+    let kept = List.empty<ICRC3.TransactionRange>();
+    for (range in ranges.vals()) {
+      if (served == MAX_BLOCKS_PER_CALL) break;
+      let length = Nat.min(range.length, MAX_BLOCKS_PER_CALL - served);
+      if (length > 0) {
+        List.add(kept, { start = range.start; length });
+        served += length;
+      };
+    };
+    List.toArray(kept);
+  };
+
+  /// A legacy read's range, its length cut to MAX_BLOCKS_PER_CALL. An empty
+  /// range is read from 0: the reply is the same (no blocks, no archive, the
+  /// same first index), and the library traps on an empty range that starts
+  /// inside an archive.
+  func capBlockRange(range : ICRC3.TransactionRange) : ICRC3.TransactionRange {
+    if (range.length == 0) return { start = 0; length = 0 };
+    { start = range.start; length = Nat.min(range.length, MAX_BLOCKS_PER_CALL) };
+  };
+
   public query func icrc3_get_blocks(args: ICRC3.GetBlocksArgs) : async ICRC3.GetBlocksResult{
-    return icrc3().get_blocks(args);
+    return icrc3().get_blocks(capBlockRanges(args));
   };
 
   // Legacy get_blocks for Rosetta compatibility
   // Returns blocks in the format expected by icrc-ledger-agent (dfinity/ic-icrc-rosetta-api)
   // This includes proper archive callbacks that point to the get_blocks method on archive canisters
   public query func get_blocks(args: { start : Nat; length : Nat }) : async ICRC3Legacy.RosettaGetBlocksResponse {
-    return icrc3().get_blocks_rosetta(args);
+    return icrc3().get_blocks_rosetta(capBlockRange(args));
   };
 
   public query func get_transactions(args: { start : Nat; length : Nat }) : async ICRC3Legacy.GetTransactionsResponse {
 
-    let results = icrc3().get_blocks_legacy(args);
+    let results = icrc3().get_blocks_legacy(capBlockRange(args));
     return {
       first_index = results.first_index;
       log_length = results.log_length;
