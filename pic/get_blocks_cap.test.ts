@@ -52,8 +52,12 @@ const GetBlocksResult = IDL.Record({
     callback: IDL.Func([GetBlocksArgs], [BlocksOnly], ['query']),
   })),
 });
-const RosettaBlocks = IDL.Record({ chain_length: IDL.Nat64, first_index: IDL.Nat, blocks: IDL.Vec(IDL.Reserved) });
-const LegacyTransactions = IDL.Record({ log_length: IDL.Nat, first_index: IDL.Nat, transactions: IDL.Vec(IDL.Reserved) });
+const RosettaBlocks = IDL.Record({
+  chain_length: IDL.Nat64, first_index: IDL.Nat, blocks: IDL.Vec(IDL.Reserved), archived_blocks: IDL.Vec(IDL.Reserved),
+});
+const LegacyTransactions = IDL.Record({
+  log_length: IDL.Nat, first_index: IDL.Nat, transactions: IDL.Vec(IDL.Reserved), archived_transactions: IDL.Vec(IDL.Reserved),
+});
 
 const TransferArg = IDL.Record({
   from_subaccount: IDL.Opt(IDL.Vec(IDL.Nat8)),
@@ -333,12 +337,15 @@ describe('block reads with archives: a client and the index reach the end', () =
     // The library traps on such a range; the cap drops it before the library sees it.
     const r = await c.getBlocks([{ start: 5n, length: 0n }, { start: 0n, length: 3n }]);
     expect(r.archived_blocks.flatMap((a) => a.args)).toEqual([{ start: 0n, length: 3n }]);
-    // The legacy reads: no blocks, and the first index of an empty read.
-    const tip = await c.legacyBlocks(1_000_000n, 0n);
+    // The legacy reads: no block, no archive, and the first index of an empty
+    // read, the ledger's first local block (archiving goes on meanwhile, so
+    // it is only known to be past block 5).
     const blocks = await c.legacyBlocks(5n, 0n);
-    expect([blocks.blocks.length, blocks.first_index, blocks.chain_length]).toEqual([0, tip.first_index, BigInt(LOG)]);
+    expect([blocks.blocks.length, blocks.archived_blocks.length, blocks.chain_length]).toEqual([0, 0, BigInt(LOG)]);
+    expect(blocks.first_index).toBeGreaterThan(5n);
     const txs = await c.legacyTransactions(5n, 0n);
-    expect([txs.transactions.length, txs.first_index, txs.log_length]).toEqual([0, tip.first_index, BigInt(LOG)]);
+    expect([txs.transactions.length, txs.archived_transactions.length, txs.log_length]).toEqual([0, 0, BigInt(LOG)]);
+    expect(txs.first_index).toBeGreaterThan(5n);
   });
 
   it('the Motoko index syncs every block, past the cap', async () => {

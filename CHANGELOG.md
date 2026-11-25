@@ -20,14 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks again from where the reply ended, and the Motoko index asks for batches of 2 000. A request
   under the cap gets what it got before. The Candid interface does not change. The cap counts
   blocks, not bytes: a ledger configured with memos of kilobytes can still build a reply past the
-  2 MiB limit.
-- **An empty block read no longer traps when it starts inside an archive.** The library traps on
-  an empty range whose start is an archived block. `icrc3_get_blocks` now drops such a range, and
-  `get_blocks` / `get_transactions` read an empty request from block 0, which gives the same reply. `inspect` now checks only the shape of
-  a block read (at most 100 ranges, every number under 10^40) and no longer refuses a large
-  length: such a request is served capped, like a query or a call from a canister, where it used
-  to be refused at ingress above 10 000 blocks per range or 100 000 in total. `src/token-mixin.mo`
-  is unchanged: its block reads come from the icrc3-mo mixin. Test: `pic/get_blocks_cap.test.ts`.
+  2 MiB limit. `inspect` now checks only the shape of a block read (at most 100 ranges, every
+  number under 10^40) and no longer refuses a large length: such a request is served capped, like
+  a query or a call from a canister, where it used to be refused at ingress above 10 000 blocks
+  per range or 100 000 in total. `src/token-mixin.mo` is unchanged: its block reads come from the
+  icrc3-mo mixin. Test: `pic/get_blocks_cap.test.ts`.
+- **An empty block read no longer traps when it starts inside an archive** (`src/Token.mo`). The
+  library traps on an empty range whose start lies past the first block of an archive.
+  `icrc3_get_blocks` now drops such a range, and `get_blocks` / `get_transactions` read an empty
+  request from block 0, which gives the same reply. `src/token-mixin.mo` still has it.
 - **A mint through `icrc2_transfer_from` respects `max_supply`** (`vendor/icrc2-mo`, a local fork
   of icrc2-mo 0.2.1). A transfer_from whose `from` is the minting account is a mint, and upstream
   credited it without checking `max_supply`: the minting account (no approval needed for its own
